@@ -1,25 +1,19 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type {
-  IntenusWalrusClient,
-  StorageResult,
-  QuiltResult,
-  QuiltBlob,
-  BatchManifest,
-  BatchIntent,
-  UserHistoryAggregated,
-  ModelMetadata,
-} from '@intenus/walrus';
+import type { IntenusWalrusClient, StorageResult } from '@intenus/walrus';
 import type { Signer } from '@mysten/sui/cryptography';
 import { IntenusWalrusClient as WalrusClient } from '@intenus/walrus';
 import type { WalrusConfig } from '../../config/walrus.config';
 
 /**
  * Walrus Service - Thin wrapper around @intenus/walrus SDK
- * Provides storage operations for intents, batches, solutions, and archives
+ * 
+ * This is a minimal wrapper that exposes core functionality.
+ * Using `any` for SDK types until they stabilize.
  */
 @Injectable()
 export class WalrusService implements OnModuleInit {
+  private readonly logger = new Logger(WalrusService.name);
   private client: IntenusWalrusClient;
   private config: WalrusConfig;
 
@@ -28,13 +22,42 @@ export class WalrusService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    // Initialize Walrus client
-    this.client = new WalrusClient({
-      network: this.config.network,
-      publisherUrl: this.config.publisherUrl,
-      aggregatorUrl: this.config.aggregatorUrl,
-      defaultEpochs: this.config.defaultEpochs,
-    });
+    try {
+      // Initialize Walrus client
+      // Note: devnet maps to testnet in the SDK
+      const network = this.config.network === 'devnet' ? 'testnet' : this.config.network;
+      
+      this.client = new WalrusClient({
+        network: network as 'mainnet' | 'testnet',
+      });
+      
+      this.logger.log(`Walrus client initialized for ${network}`);
+    } catch (error) {
+      this.logger.error('Failed to initialize Walrus client', error);
+      throw error;
+    }
+  }
+  
+
+  // ===== INTENT OPERATIONS =====
+
+  /**
+   * Verify blob exists on Walrus
+   */
+  async verifyBlobExists(blobId: string): Promise<boolean> {
+    const exists = await this.client.exists(blobId);
+    if (!exists) {
+      throw new Error(`Intent not found on Walrus: ${blobId}`);
+    }
+    return true;
+  }
+
+  /**
+   * Fetch intent from Walrus (for recovery)
+   */
+  async fetchIntent(blobId: string): Promise<any> {
+    const buffer = await this.client.fetchRaw(blobId);
+    return JSON.parse(buffer.toString());
   }
 
   // ===== BATCH OPERATIONS =====
@@ -43,7 +66,7 @@ export class WalrusService implements OnModuleInit {
    * Store batch manifest to Walrus
    */
   async storeBatchManifest(
-    manifest: BatchManifest,
+    manifest: any,
     signer: Signer,
   ): Promise<StorageResult> {
     return this.client.batches.storeManifest(manifest, signer);
@@ -52,7 +75,7 @@ export class WalrusService implements OnModuleInit {
   /**
    * Fetch batch manifest by epoch
    */
-  async fetchBatchManifest(epoch: number): Promise<BatchManifest> {
+  async fetchBatchManifest(epoch: number): Promise<any> {
     return this.client.batches.fetchManifest(epoch);
   }
 
@@ -64,34 +87,35 @@ export class WalrusService implements OnModuleInit {
   }
 
   /**
-   * Store intents as Quilt (batch optimization)
+   * Store intents efficiently (uses SDK's writeFiles internally)
+   * Note: This method's signature may change as SDK stabilizes
    */
-  async storeIntentsQuilt(
-    intents: Array<{ intent_id: string; data: BatchIntent; category?: string }>,
+  async storeIntents(
+    intents: Array<{ intent_id: string; data: any; category?: string }>,
     batchId: string,
     signer: Signer,
     epochs?: number,
-  ): Promise<QuiltResult> {
-    return this.client.batches.storeIntentsQuilt(
+  ): Promise<any> {
+    // Use underlying client directly for now
+    return (this.client.batches as any).storeIntents?.(
       intents,
       batchId,
       signer,
       epochs,
-    );
+    ) || Promise.reject(new Error('storeIntents not implemented in SDK yet'));
   }
 
   /**
-   * Fetch intent from Quilt by patch ID
+   * Fetch intents by epoch
    */
-  async fetchIntentFromQuilt(
-    quiltBlobId: string,
-    intentIdentifier: string,
-  ): Promise<BatchIntent> {
-    const buffer = await this.client.batches.fetchIntentFromQuilt(
-      quiltBlobId,
-      intentIdentifier,
-    );
-    return JSON.parse(buffer.toString());
+  async fetchIntentsByEpoch(epoch: number): Promise<Array<{
+    intent_id: string;
+    data: any;
+    category: string;
+  }>> {
+    // Use underlying client directly for now
+    return (this.client.batches as any).fetchIntentsByEpoch?.(epoch) || 
+      Promise.reject(new Error('fetchIntentsByEpoch not implemented in SDK yet'));
   }
 
   // ===== ARCHIVE OPERATIONS =====
@@ -123,7 +147,7 @@ export class WalrusService implements OnModuleInit {
    * Store user history
    */
   async storeUserHistory(
-    history: UserHistoryAggregated,
+    history: any,
     signer: Signer,
   ): Promise<StorageResult> {
     return this.client.users.storeHistory(history, signer);
@@ -147,6 +171,7 @@ export class WalrusService implements OnModuleInit {
 
   /**
    * Store training dataset
+   * Note: Returns composite result, not single StorageResult
    */
   async storeTrainingDataset(
     version: string,
@@ -154,18 +179,19 @@ export class WalrusService implements OnModuleInit {
     labels: Buffer,
     metadata: any,
     signer: Signer,
-  ): Promise<StorageResult> {
-    return this.client.training.storeDataset(
+  ): Promise<any> {
+    return (this.client.training as any).storeDataset?.(
       version,
       features,
       labels,
       metadata,
       signer,
-    );
+    ) || Promise.reject(new Error('storeDataset not fully implemented in SDK'));
   }
 
   /**
    * Store trained model
+   * Note: Returns composite result, not single StorageResult
    */
   async storeModel(
     modelName: string,
@@ -173,36 +199,42 @@ export class WalrusService implements OnModuleInit {
     modelBuffer: Buffer,
     metadata: any,
     signer: Signer,
-  ): Promise<StorageResult> {
-    return this.client.training.storeModel(
+  ): Promise<any> {
+    return (this.client.training as any).storeModel?.(
       modelName,
       version,
       modelBuffer,
       metadata,
       signer,
-    );
+    ) || Promise.reject(new Error('storeModel not fully implemented in SDK'));
   }
 
   /**
-   * Fetch training dataset
+   * Fetch training dataset metadata
    */
-  async fetchTrainingDataset(
-    version: string,
-  ): Promise<{ features: Buffer; labels: Buffer }> {
-    return this.client.training.fetchDataset(version);
+  async fetchDatasetMetadata(metadataBlobId: string): Promise<any> {
+    return (this.client.training as any).fetchDatasetMetadata?.(metadataBlobId) ||
+      Promise.reject(new Error('fetchDatasetMetadata not implemented in SDK yet'));
+  }
+
+  /**
+   * Fetch model metadata
+   */
+  async fetchModelMetadata(metadataBlobId: string): Promise<any> {
+    return (this.client.training as any).fetchModelMetadata?.(metadataBlobId) ||
+      Promise.reject(new Error('fetchModelMetadata not implemented in SDK yet'));
   }
 
   /**
    * Fetch trained model
    */
   async fetchModel(
+    modelBlobId: string,
     modelName: string,
     version: string,
-  ): Promise<{
-    metadata: ModelMetadata;
-    model: Buffer;
-  }> {
-    return this.client.training.fetchModel(modelName, version);
+  ): Promise<Buffer> {
+    return (this.client.training as any).fetchModel?.(modelBlobId, modelName, version) ||
+      Promise.reject(new Error('fetchModel signature may have changed in SDK'));
   }
 
   // ===== LOW-LEVEL OPERATIONS =====
@@ -231,28 +263,6 @@ export class WalrusService implements OnModuleInit {
    */
   async exists(path: string): Promise<boolean> {
     return this.client.exists(path);
-  }
-
-  /**
-   * Store Quilt (batch of blobs)
-   */
-  async storeQuilt(
-    blobs: QuiltBlob[],
-    epochs: number,
-    signer: Signer,
-    deletable: boolean = false,
-  ): Promise<QuiltResult> {
-    return this.client.storeQuilt(blobs, epochs, signer, deletable);
-  }
-
-  /**
-   * Fetch from Quilt by patch ID
-   */
-  async fetchFromQuilt(
-    quiltBlobId: string,
-    patchIdentifier: string,
-  ): Promise<Buffer> {
-    return this.client.fetchFromQuilt(quiltBlobId, patchIdentifier);
   }
 
   /**
