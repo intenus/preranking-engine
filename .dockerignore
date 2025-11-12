@@ -1,0 +1,64 @@
+# ============================================
+# Docker Ignore File
+# ============================================
+
+# Node modules
+node_modules
+npm-debug.log
+pnpm-debug.log
+yarn-error.log
+
+# Build artifacts
+dist
+build
+.next
+.nuxt
+.output
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Testing
+coverage
+.nyc_output
+*.log
+
+# Documentation
+*.md
+!README.md
+docs
+
+# Temporary files
+tmp
+temp
+*.tmp
+
+# Lock files (copied separately)
+# package-lock.json
+# yarn.lock
+
+# Typescript
+*.tsbuildinfo

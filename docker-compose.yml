@@ -1,0 +1,170 @@
+# ============================================
+# INTENUS BACKEND - DOCKER COMPOSE
+# ============================================
+# ⚠️ FOR LOCAL DEVELOPMENT ONLY
+# 
+# This file contains default development credentials.
+# DO NOT use these values in production!
+# 
+# Production environments should:
+# - Use managed databases (AWS RDS, GCP Cloud SQL)
+# - Store secrets in environment variables or secret managers
+# - Set DATABASE_SYNCHRONIZE=false (use migrations)
+# - Restrict CORS origins
+# ============================================
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: intenus-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: intenus
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d  # For initialization SQL scripts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d intenus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - intenus-network
+
+  # Redis Cache & Pub/Sub
+  redis:
+    image: redis:7-alpine
+    container_name: intenus-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - intenus-network
+
+  # NestJS Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development  # Use development stage for hot reload
+    container_name: intenus-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # HTTP API
+      - "9229:9229"  # Node debugger (optional)
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      
+      # Database
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: intenus
+      DATABASE_SYNCHRONIZE: "true"  # Auto-create tables (dev only!)
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_URL: redis://redis:6379
+      
+      # Sui
+      SUI_NETWORK: testnet
+      SUI_RPC_URL: https://fullnode.testnet.sui.io:443
+      SUI_FAUCET_URL: https://faucet.testnet.sui.io/gas
+      
+      # Walrus
+      WALRUS_NETWORK: testnet
+      WALRUS_PUBLISHER_URL: ""
+      WALRUS_AGGREGATOR_URL: ""
+      WALRUS_DEFAULT_EPOCHS: 1
+      
+      # CORS
+      CORS_ORIGIN: "*"
+    volumes:
+      - .:/app  # Mount source code for hot reload
+      - /app/node_modules  # Prevent overwriting node_modules
+      - backend-logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - intenus-network
+
+  # pgAdmin - PostgreSQL Web UI (Optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: intenus-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@intenus.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - intenus-network
+    profiles:
+      - tools  # Only start with: docker-compose --profile tools up
+
+  # Redis Commander - Redis Web UI (Optional)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: intenus-redis-commander
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    depends_on:
+      - redis
+    networks:
+      - intenus-network
+    profiles:
+      - tools  # Only start with: docker-compose --profile tools up
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  pgadmin-data:
+    driver: local
+  backend-logs:
+    driver: local
+
+networks:
+  intenus-network:
+    driver: bridge
