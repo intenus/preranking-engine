@@ -53,11 +53,20 @@ describe('RedisService', () => {
   describe('Intent Storage', () => {
     it('should store intent in Redis', async () => {
       const intentId = 'intent-123';
-      await service.storeIntent(intentId, mockSwapIntent);
+      const intentWithIGS = {
+        intent: {
+          intent_id: intentId,
+          creator: '0xabc',
+          blobId: 'blob-123',
+        } as any,
+        IGSIntent: mockSwapIntent,
+      };
+      
+      await service.storeIntent(intentId, intentWithIGS);
 
       expect(mockRedisClient.set).toHaveBeenCalledWith(
         `intent:${intentId}`,
-        JSON.stringify(mockSwapIntent),
+        JSON.stringify(intentWithIGS),
         'EX',
         3600,
       );

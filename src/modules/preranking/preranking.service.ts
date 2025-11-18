@@ -300,18 +300,16 @@ export class PreRankingService {
     solution: IGSSolution,
     dryRunResult: any,
   ): PreRankingResult['featureVectors'][0]['features'] {
-    // Extract gas cost from dry run
     const gasCost = this.extractGasCost(dryRunResult);
-
-    // Calculate surplus (simplified - would need market data in production)
+    const protocolFees = this.extractProtocolFees(dryRunResult);
     const surplus = this.calculateSurplus(intent, dryRunResult);
 
     return {
       surplusUsd: surplus.usd,
       surplusPercentage: surplus.percentage,
       gasCost,
-      protocolFees: 0, // Would extract from dry run events
-      totalCost: gasCost,
+      protocolFees,
+      totalCost: gasCost + protocolFees,
       totalHops: this.extractHopCount(dryRunResult),
       protocolsCount: this.extractProtocolCount(dryRunResult),
       estimatedExecutionTime: 2000, // Placeholder
@@ -324,6 +322,42 @@ export class PreRankingService {
     return Number(dryRunResult.effects?.gasUsed?.computationCost || 0);
   }
 
+  /**
+   * Extract protocol fees from dry run result
+   * Fees are typically captured in balance changes or events
+   */
+  private extractProtocolFees(dryRunResult: any): number {
+    try {
+      const events = dryRunResult.events || [];
+      let totalFees = 0;
+
+      // Look for fee-related events
+      // Common patterns: SwapEvent, FeeCollected, etc.
+      for (const event of events) {
+        const parsedJson = event.parsedJson;
+        if (parsedJson) {
+          if (parsedJson.fee || parsedJson.protocol_fee || parsedJson.platformFee) {
+            const fee = parsedJson.fee || parsedJson.protocol_fee || parsedJson.platformFee;
+            totalFees += Number(fee);
+          }
+          // Check for swap events with fee information
+          if (parsedJson.fee_amount) {
+            totalFees += Number(parsedJson.fee_amount);
+          }
+        }
+      }
+
+      return totalFees;
+    } catch (error) {
+      this.logger.warn(`Failed to extract protocol fees: ${error}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Calculate surplus (output amount vs expected minimum)
+   * Positive surplus means user gets more than minimum expected
+   */
   private calculateSurplus(
     intent: IGSIntent,
     dryRunResult: any,
@@ -331,20 +365,150 @@ export class PreRankingService {
     usd: number;
     percentage: number;
   } {
-    // Simplified - would need actual output amounts and market prices
-    return {
-      usd: 0,
-      percentage: 0,
-    };
+    try {
+      const balanceChanges = dryRunResult.balanceChanges || [];
+      
+      // Find output balance changes for the user
+      const outputs = intent.operation.outputs || [];
+      
+      if (outputs.length === 0 || balanceChanges.length === 0) {
+        return { usd: 0, percentage: 0 };
+      }
+
+      // Get the expected minimum output from constraints
+      const minOutputs = intent.constraints?.minOutputs;
+      if (!minOutputs || minOutputs.length === 0) {
+        return { usd: 0, percentage: 0 };
+      }
+
+      // Calculate surplus for primary output
+      const primaryOutput = outputs[0];
+      const minOutput = minOutputs.find(
+        (min) => min.assetId === primaryOutput.assetId,
+      );
+
+      if (!minOutput) {
+        return { usd: 0, percentage: 0 };
+      }
+
+      // Find actual output from balance changes
+      const actualOutput = balanceChanges.find(
+        (change: any) =>
+          change.coinType === primaryOutput.assetId &&
+          change.owner?.AddressOwner === intent.object.userAddress,
+      );
+
+      if (!actualOutput) {
+        return { usd: 0, percentage: 0 };
+      }
+
+      const actualAmount = Math.abs(Number(actualOutput.amount));
+      const minAmount = Number(minOutput.amount);
+      const surplusAmount = actualAmount - minAmount;
+      const surplusPercentage = (surplusAmount / minAmount) * 100;
+
+      // Note: USD conversion would require oracle/price feed
+      // For now, return raw surplus amount
+      return {
+        usd: surplusAmount, // Would convert to USD with oracle
+        percentage: surplusPercentage,
+      };
+    } catch (error) {
+      this.logger.warn(`Failed to calculate surplus: ${error}`);
+      return { usd: 0, percentage: 0 };
+    }
   }
 
+  /**
+   * Extract hop count from dry run result
+   * Hops are counted by analyzing balance changes and object changes
+   * Each intermediate swap/interaction counts as a hop
+   */
   private extractHopCount(dryRunResult: any): number {
-    // Would parse transaction structure to count hops
-    return 1;
+    try {
+      // Count balance changes (excluding gas payment)
+      const balanceChanges = dryRunResult.balanceChanges || [];
+      const nonGasChanges = balanceChanges.filter(
+        (change: any) => change.coinType !== '0x2::sui::SUI',
+      );
+
+      // Each unique coin type transition represents a potential hop
+      // Simple heuristic: (unique coin types - 1) / 2
+      // More sophisticated: parse transaction commands
+      const uniqueCoinTypes = new Set(
+        nonGasChanges.map((change: any) => change.coinType),
+      );
+
+      // If we have object changes, analyze those for swap operations
+      const objectChanges = dryRunResult.objectChanges || [];
+      const swapOperations = objectChanges.filter(
+        (change: any) =>
+          change.type === 'mutated' || change.type === 'created',
+      );
+
+      // Heuristic: max of coin type transitions or swap operations
+      const hopsByBalance = Math.max(1, uniqueCoinTypes.size - 1);
+      const hopsByObjects = Math.max(1, Math.floor(swapOperations.length / 2));
+
+      return Math.max(hopsByBalance, hopsByObjects);
+    } catch (error) {
+      this.logger.warn(`Failed to extract hop count: ${error}`);
+      return 1;
+    }
   }
 
+  /**
+   * Extract protocol count from dry run result
+   * Protocols are identified by analyzing events and package IDs
+   */
   private extractProtocolCount(dryRunResult: any): number {
-    // Would parse events to count unique protocols
-    return 1;
+    try {
+      const events = dryRunResult.events || [];
+      const objectChanges = dryRunResult.objectChanges || [];
+
+      // Extract unique package IDs from events
+      const packageIdsFromEvents = new Set(
+        events
+          .map((event: any) => {
+            const eventType = event.type;
+            if (typeof eventType === 'string') {
+              const parts = eventType.split('::');
+              if (parts.length >= 2) {
+                return parts[0]; // Package ID
+              }
+            }
+            return null;
+          })
+          .filter((id: string | null) => id !== null && id !== '0x2'), // Exclude system package
+      );
+
+      // Extract unique package IDs from object changes
+      const packageIdsFromObjects = new Set(
+        objectChanges
+          .map((change: any) => {
+            const objectType = change.objectType;
+            if (typeof objectType === 'string') {
+              const parts = objectType.split('::');
+              if (parts.length >= 2) {
+                return parts[0];
+              }
+            }
+            return null;
+          })
+          .filter((id: string | null) => id !== null && id !== '0x2'),
+      );
+
+      // Combine both sets
+      const allPackageIds = new Set([
+        ...packageIdsFromEvents,
+        ...packageIdsFromObjects,
+      ]);
+
+      // Return count, minimum 1 protocol
+      return Math.max(1, allPackageIds.size);
+    } catch (error) {
+      this.logger.warn(`Failed to extract protocol count: ${error}`);
+      return 1; 
+    }
   }
 }

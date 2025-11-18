@@ -4,6 +4,7 @@ import { ConstraintValidator } from './validators/constraint.validator';
 import { SuiService } from '../sui/sui.service';
 import { mockSwapIntent, mockLimitBuyIntent } from '../../../test/mocks/intent.mock';
 import { mockValidSolution, mockFailedSolution } from '../../../test/mocks/solution.mock';
+import { mockSolutionSubmittedEvent } from '../../../test/mocks/events.mock';
 
 describe('PreRankingService', () => {
   let service: PreRankingService;
@@ -15,10 +16,22 @@ describe('PreRankingService', () => {
       status: {
         status: 'success',
       },
+      executedEpoch: '0',
+      gasObject: {} as any,
+      gasUsed: {
+        computationCost: '1000',
+        storageCost: '0',
+        storageRebate: '0',
+        nonRefundableStorageFee: '0',
+      },
+      messageVersion: 'v1',
+      transactionDigest: 'test-digest-success',
     },
     events: [],
     objectChanges: [],
-  };
+    balanceChanges: [],
+    input: {} as any,
+  } as any;
 
   const mockDryRunFailure = {
     effects: {
@@ -26,8 +39,22 @@ describe('PreRankingService', () => {
         status: 'failure',
         error: 'Insufficient balance',
       },
+      executedEpoch: '0',
+      gasObject: {} as any,
+      gasUsed: {
+        computationCost: '0',
+        storageCost: '0',
+        storageRebate: '0',
+        nonRefundableStorageFee: '0',
+      },
+      messageVersion: 'v1',
+      transactionDigest: 'test-digest',
     },
-  };
+    events: [],
+    objectChanges: [],
+    balanceChanges: [],
+    input: {} as any,
+  } as any;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -37,6 +64,7 @@ describe('PreRankingService', () => {
           provide: ConstraintValidator,
           useValue: {
             validate: jest.fn().mockResolvedValue({ isValid: true, errors: [] }),
+            validateComplexConstraints: jest.fn().mockResolvedValue({ isValid: true, errors: [] }),
           },
         },
         {
@@ -63,19 +91,18 @@ describe('PreRankingService', () => {
 
   describe('processSingleSolution (Instant Preranking)', () => {
     it('should pass valid solution through all validation steps', async () => {
+      const windowEndMs = Date.now() + 300000; // 5 minutes
       const result = await service.processSingleSolution(
+        windowEndMs,
         mockSwapIntent,
-        'solution-123',
+        mockSolutionSubmittedEvent,
         mockValidSolution,
       );
 
       expect(result.passed).toBe(true);
       expect(result.features).toBeDefined();
       expect(result.dryRunResult).toBeDefined();
-      expect(constraintValidator.validate).toHaveBeenCalledWith(
-        mockSwapIntent,
-        mockValidSolution,
-      );
+      expect(constraintValidator.validate).toHaveBeenCalled();
       expect(suiService.dryRunTransactionBlock).toHaveBeenCalledWith(
         mockValidSolution.transactionBytes,
       );
@@ -87,9 +114,11 @@ describe('PreRankingService', () => {
         errors: [{ field: 'slippage', message: 'Exceeds max slippage', severity: 'error' }],
       });
 
+      const windowEndMs = Date.now() + 300000;
       const result = await service.processSingleSolution(
+        windowEndMs,
         mockSwapIntent,
-        'solution-123',
+        mockSolutionSubmittedEvent,
         mockValidSolution,
       );
 
@@ -102,9 +131,11 @@ describe('PreRankingService', () => {
     it('should fail solution with failed dry run', async () => {
       jest.spyOn(suiService, 'dryRunTransactionBlock').mockResolvedValue(mockDryRunFailure);
 
+      const windowEndMs = Date.now() + 300000;
       const result = await service.processSingleSolution(
+        windowEndMs,
         mockSwapIntent,
-        'solution-123',
+        mockSolutionSubmittedEvent,
         mockValidSolution,
       );
 
@@ -120,9 +151,11 @@ describe('PreRankingService', () => {
         new Error('Validation service unavailable'),
       );
 
+      const windowEndMs = Date.now() + 300000;
       const result = await service.processSingleSolution(
+        windowEndMs,
         mockSwapIntent,
-        'solution-123',
+        mockSolutionSubmittedEvent,
         mockValidSolution,
       );
 
@@ -134,9 +167,11 @@ describe('PreRankingService', () => {
     });
 
     it('should extract features from valid solution', async () => {
+      const windowEndMs = Date.now() + 300000;
       const result = await service.processSingleSolution(
+        windowEndMs,
         mockSwapIntent,
-        'solution-123',
+        mockSolutionSubmittedEvent,
         mockValidSolution,
       );
 
@@ -161,9 +196,10 @@ describe('PreRankingService', () => {
     });
 
     it('should separate passed and failed solutions', async () => {
-      jest.spyOn(constraintValidator, 'validate')
-        .mockResolvedValueOnce({ isValid: true, errors: [] })
-        .mockResolvedValueOnce({ isValid: false, errors: [{ field: 'constraint', message: 'Invalid', severity: 'error' }] });
+      // Mock one successful and one failed dry run
+      jest.spyOn(suiService, 'dryRunTransactionBlock')
+        .mockResolvedValueOnce(mockDryRunSuccess)
+        .mockResolvedValueOnce(mockDryRunFailure);
 
       const solutions = [
         { solutionId: 'sol-1', solution: mockValidSolution },

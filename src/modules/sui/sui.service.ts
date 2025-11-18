@@ -7,6 +7,7 @@ import type {
   SuiTransactionBlockResponseOptions,
   TransactionFilter,
   SuiEvent,
+  DryRunTransactionBlockResponse,
 } from '@mysten/sui/client';
 import type { SuiConfig } from '../../config/sui.config';
 import type { IntentSubmittedEvent, SolutionSubmittedEvent, EventCursor } from '../../common/types/sui-events.types';
@@ -225,7 +226,7 @@ export class SuiService implements OnModuleInit {
    */
   async dryRunTransactionBlock(
     transactionBlock: string | Uint8Array,
-  ): Promise<any> {
+  ): Promise<DryRunTransactionBlockResponse> {
     return this.client.dryRunTransactionBlock({
       transactionBlock:
         typeof transactionBlock === 'string'

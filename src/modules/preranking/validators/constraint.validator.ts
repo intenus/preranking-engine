@@ -4,11 +4,11 @@ import type {
   IGSConstraints,
 } from '../../../common/types/igs-intent.types';
 import type { IGSSolution } from '../../../common/types/igs-solution.types';
-import { SuiService } from 'src/modules/sui/sui.service';
+import { SuiService } from '../../sui/sui.service';
 import {
   IntentSubmittedEvent,
   SolutionSubmittedEvent,
-} from 'src/common/types/sui-events.types';
+} from '../../../common/types/sui-events.types';
 
 interface ValidationResult {
   isValid: boolean;
@@ -295,14 +295,10 @@ export class ConstraintValidator {
     dryRunResult: any,
     assetId: string,
   ): string | null {
-    // TODO: Parse Sui dry run results to extract coin changes
-    // Dry run results contain 'effects.created' or 'balanceChanges'
-
     if (!dryRunResult?.effects?.balanceChanges) {
       return null;
     }
 
-    // Find the balance change for this asset (positive = received)
     const balanceChange = dryRunResult.effects.balanceChanges.find(
       (bc: any) => bc.coinType === assetId && BigInt(bc.amount) > 0,
     );
@@ -321,7 +317,6 @@ export class ConstraintValidator {
     const { computationCost, storageCost, storageRebate } =
       dryRunResult.effects.gasUsed;
 
-    // Total gas = computation + storage - rebate
     return (
       Number(computationCost) + Number(storageCost) - Number(storageRebate || 0)
     );
@@ -336,7 +331,6 @@ export class ConstraintValidator {
     dryRunResult: any,
     priceAsset: string,
   ): number | null {
-    // Extract input and output amounts from intent and dry run
     const inputAsset = intent.operation.inputs[0];
     const outputAsset = intent.operation.outputs[0];
 
@@ -359,14 +353,12 @@ export class ConstraintValidator {
     if (inputAsset.amount.type === 'exact') {
       inputAmount = inputAsset.amount.value;
     } else {
-      return null; // Can't calculate price for range/all inputs
+      return null;
     }
 
-    // Calculate price based on which asset is the price asset
     const inputAmountNum = parseFloat(inputAmount);
     const outputAmountNum = parseFloat(actualOutputStr);
 
-    // Adjust for decimals if asset info available
     const inputDecimals = inputAsset.assetInfo?.decimals || 0;
     const outputDecimals = outputAsset.assetInfo?.decimals || 0;
 

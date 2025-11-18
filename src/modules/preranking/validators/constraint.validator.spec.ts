@@ -2,13 +2,31 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConstraintValidator } from './constraint.validator';
 import type { IGSIntent } from '../../../common/types/igs-intent.types';
 import type { IGSSolution } from '../../../common/types/igs-solution.types';
+import type { SolutionSubmittedEvent } from '../../../common/types/sui-events.types';
+import { SuiService } from '../../sui/sui.service';
 
 describe('ConstraintValidator', () => {
   let validator: ConstraintValidator;
 
+  const mockSolutionEvent: SolutionSubmittedEvent = {
+    solutionId: 'sol-test-123',
+    intentId: 'intent-test-123',
+    solverAddress: '0xsolver',
+    walrusBlobId: 'blob-123',
+    submittedAt: Date.now(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ConstraintValidator],
+      providers: [
+        ConstraintValidator,
+        {
+          provide: SuiService,
+          useValue: {
+            getSuiClient: jest.fn().mockReturnValue({}),
+          },
+        },
+      ],
     }).compile();
 
     validator = module.get<ConstraintValidator>(ConstraintValidator);
@@ -16,14 +34,15 @@ describe('ConstraintValidator', () => {
 
   describe('deadline validation', () => {
     it('should reject solution submitted after deadline', async () => {
+      const now = Date.now();
       const intent: IGSIntent = {
         igsVersion: '1.0.0',
         object: {
           userAddress: '0x123',
-          createdTs: Date.now(),
+          createdTs: now,
           policy: {
-            solverAccessWindow: { startMs: Date.now(), endMs: Date.now() + 10000 },
-            autoRevokeTime: Date.now() + 20000,
+            solverAccessWindow: { startMs: now, endMs: now + 10000 },
+            autoRevokeTime: now + 20000,
             accessCondition: {
               requiresSolverRegistration: false,
               minSolverStake: '0',
@@ -51,7 +70,7 @@ describe('ConstraintValidator', () => {
           ],
         },
         constraints: {
-          deadlineMs: Date.now() - 1000, // Deadline in the past
+          deadlineMs: now - 1000, // Deadline in the past
         },
       };
 
@@ -60,7 +79,14 @@ describe('ConstraintValidator', () => {
         transactionBytes: 'mockTxBytes',
       };
 
-      const result = await validator.validate(intent, solution);
+      // Solution submitted after window end (deadline expired)
+      const windowEndMs = now + 5000;
+      const lateEvent: SolutionSubmittedEvent = {
+        ...mockSolutionEvent,
+        submittedAt: now + 15000, // After windowEndMs
+      };
+
+      const result = await validator.validate(windowEndMs, intent, solution, lateEvent);
 
       expect(result.isValid).toBe(false);
       expect(result.errors).toHaveLength(1);
@@ -113,7 +139,8 @@ describe('ConstraintValidator', () => {
         transactionBytes: 'mockTxBytes',
       };
 
-      const result = await validator.validate(intent, solution);
+      const windowEndMs = Date.now() + 10000;
+      const result = await validator.validate(windowEndMs, intent, solution, mockSolutionEvent);
 
       expect(result.isValid).toBe(true);
       expect(result.errors).toHaveLength(0);
@@ -374,7 +401,8 @@ describe('ConstraintValidator', () => {
         transactionBytes: 'mockTxBytes',
       };
 
-      const result = await validator.validate(intent, solution);
+      const windowEndMs = Date.now() + 10000;
+      const result = await validator.validate(windowEndMs, intent, solution, mockSolutionEvent);
 
       expect(result.isValid).toBe(true);
       expect(result.errors).toHaveLength(0);

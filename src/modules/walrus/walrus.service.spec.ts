@@ -1,12 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { HttpService } from '@nestjs/axios';
 import { WalrusService } from './walrus.service';
 import { mockSwapIntent } from '../../../test/mocks/intent.mock';
 import { mockValidSolution } from '../../../test/mocks/solution.mock';
+import { of } from 'rxjs';
 
 describe('WalrusService', () => {
   let service: WalrusService;
   let configService: ConfigService;
+  let httpService: HttpService;
 
   const mockConfig = {
     network: 'testnet',
@@ -41,11 +44,20 @@ describe('WalrusService', () => {
             }),
           },
         },
+        {
+          provide: HttpService,
+          useValue: {
+            get: jest.fn(),
+            post: jest.fn(),
+            put: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<WalrusService>(WalrusService);
     configService = module.get<ConfigService>(ConfigService);
+    httpService = module.get<HttpService>(HttpService);
 
     // Mock the WalrusClient
     (service as any).client = mockWalrusClient;
