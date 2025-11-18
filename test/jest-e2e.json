@@ -3,6 +3,12 @@
   "rootDir": ".",
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
+  "testPathIgnorePatterns": [
+    "/node_modules/",
+    "/dist/",
+    "/src/modules/batch/",
+    "/src/modules/deprecated/"
+  ],
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   }

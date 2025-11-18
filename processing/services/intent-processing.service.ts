@@ -49,13 +49,12 @@ export class IntentProcessingService {
     try {
       this.logger.log(`Processing intent: ${event.intentId}`);
 
-      // Step 1: Fetch encrypted intent from Walrus
-      const intent = await this.walrusService.fetchIntent(event.walrusBlobId);
+      const intent = await this.walrusService.fetchIntentHttp(event.walrusBlobId);
+      await this.redisService.storeIntent(event.intentId, {
+        intent: event,
+        IGSIntent: intent,
+      });
 
-      // Step 2: Store intent in Redis
-      await this.redisService.storeIntent(event.intentId, intent);
-
-      // Step 3: Calculate solution listening window
       const windowDuration = event.solverAccessWindow.endMs - event.solverAccessWindow.startMs;
       const now = Date.now();
       const remainingTime = Math.max(0, event.solverAccessWindow.endMs - now);
@@ -64,7 +63,6 @@ export class IntentProcessingService {
         `Intent ${event.intentId}: Solution window ${windowDuration}ms, remaining ${remainingTime}ms`,
       );
 
-      // Step 4: Initialize intent context (no solutions stored here anymore)
       const context: IntentContext = {
         intent,
         intentId: event.intentId,
@@ -76,7 +74,6 @@ export class IntentProcessingService {
 
       this.activeIntents.set(event.intentId, context);
 
-      // Step 5: Set timeout to send results to ranking service when window closes
       context.windowCloseTimeout = setTimeout(async () => {
         await this.sendToRankingService(event.intentId);
       }, remainingTime);
@@ -95,7 +92,6 @@ export class IntentProcessingService {
   async handleSolutionSubmitted(event: SolutionSubmittedEvent): Promise<void> {
     try {
       const context = this.activeIntents.get(event.intentId);
-
       if (!context) {
         this.logger.warn(`Received solution for unknown intent: ${event.intentId}`);
         return;
@@ -103,17 +99,14 @@ export class IntentProcessingService {
 
       this.logger.log(`Received solution ${event.solutionId} for intent ${event.intentId}`);
 
-      // Step 1: Fetch encrypted solution from Walrus instantly
       const solution = await this.walrusService.fetchSolution(event.walrusBlobId);
-
-      // Step 2: Run preranking immediately (instant validation)
       const preRankingResult = await this.preRankingService.processSingleSolution(
+        context.windowEndMs,
         context.intent,
-        event.solutionId,
+        event,
         solution,
       );
 
-      // Step 3: If solution passed, store in Redis
       if (preRankingResult.passed) {
         await this.redisService.storeSolutionResult(
           event.intentId,
@@ -132,7 +125,6 @@ export class IntentProcessingService {
           `Solution ${event.solutionId} PASSED preranking for intent ${event.intentId} (${context.passedSolutionCount} total passed)`,
         );
       } else {
-        // Store failed solution for tracking
         await this.redisService.storeFailedSolution(
           event.intentId,
           event.solutionId,
@@ -175,11 +167,8 @@ export class IntentProcessingService {
         return;
       }
 
-      // Retrieve all passed solutions from Redis
       const passedSolutions = await this.redisService.getPassedSolutions(intentId);
 
-      // Send to external ranking service via HTTP/gRPC/Message Queue
-      // For now, we'll store in a specific Redis key that the ranking service monitors
       await this.redisService.sendToRankingService(intentId, {
         intentId,
         intent: context.intent,
@@ -190,7 +179,6 @@ export class IntentProcessingService {
 
       this.logger.log(`Sent ${passedSolutions.length} solutions to ranking service for intent ${intentId}`);
 
-      // Cleanup in-memory context (data remains in Redis for ranking service)
       this.activeIntents.delete(intentId);
     } catch (error: any) {
       this.logger.error(`Error sending to ranking service: ${error.message}`, error.stack);

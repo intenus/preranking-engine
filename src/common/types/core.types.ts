@@ -3,6 +3,9 @@
  * PreRanking and Ranking Engine types
  */
 
+import { IGSIntent } from "./igs-intent.types";
+import { IntentSubmittedEvent } from "./sui-events.types";
+
 export interface SolutionSubmission {
   solutionId: string;
   intentId: string;
@@ -23,6 +26,11 @@ export interface IntentClassification {
     modelVersion?: string;
     featuresUsed?: string[];
   };
+}
+
+export interface IntentWithIGS {
+  intent: IntentSubmittedEvent;
+  IGSIntent: IGSIntent;
 }
 
 export interface PreRankingResult {

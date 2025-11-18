@@ -10,6 +10,7 @@ import Redis from 'ioredis';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import type { IGSIntent } from '../../common/types/igs-intent.types';
 import type { IGSSolution } from '../../common/types/igs-solution.types';
+import { IntentWithIGS } from '../../common/types';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
@@ -50,7 +51,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   /**
    * Store intent in Redis
    */
-  async storeIntent(intentId: string, intent: IGSIntent): Promise<void> {
+  async storeIntent(intentId: string, intent: IntentWithIGS): Promise<void> {
     const key = `${this.INTENT_PREFIX}${intentId}`;
     await this.client.set(key, JSON.stringify(intent), 'EX', 3600); // 1 hour TTL
     this.logger.log(`Stored intent ${intentId} in Redis`);
@@ -59,7 +60,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   /**
    * Get intent from Redis
    */
-  async getIntent(intentId: string): Promise<IGSIntent | null> {
+  async getIntent(intentId: string): Promise<IntentWithIGS | null> {
     const key = `${this.INTENT_PREFIX}${intentId}`;
     const data = await this.client.get(key);
     return data ? JSON.parse(data) : null;

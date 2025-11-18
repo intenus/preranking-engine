@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { IGSIntent } from '../../common/types/igs-intent.types';
 import type { IGSSolution } from '../../common/types/igs-solution.types';
-import type { PreRankingResult, IntentClassification } from '../../common/types/core.types';
+import type {
+  PreRankingResult,
+  IntentClassification,
+} from '../../common/types/core.types';
 import { ConstraintValidator } from './validators/constraint.validator';
 import { SuiService } from '../sui/sui.service';
+import { SolutionSubmittedEvent } from 'src/common/types/sui-events.types';
 
 /**
  * PreRanking Service
@@ -24,8 +28,9 @@ export class PreRankingService {
    * Returns validation result immediately
    */
   async processSingleSolution(
+    windowEndMs: number,
     intent: IGSIntent,
-    solutionId: string,
+    submittedSolution: SolutionSubmittedEvent,
     solution: IGSSolution,
   ): Promise<{
     passed: boolean;
@@ -35,10 +40,16 @@ export class PreRankingService {
     dryRunResult?: any;
   }> {
     try {
-      this.logger.log(`PreRanking: Processing solution ${solutionId} instantly`);
+      this.logger.log(
+        `PreRanking: Processing solution ${submittedSolution.solutionId} instantly`,
+      );
 
-      // Step 1: Validate constraints
-      const validationResult = await this.constraintValidator.validate(intent, solution);
+      const validationResult = await this.constraintValidator.validate(
+        windowEndMs,
+        intent,
+        solution,
+        submittedSolution
+      );
 
       if (!validationResult.isValid) {
         return {
@@ -48,7 +59,6 @@ export class PreRankingService {
         };
       }
 
-      // Step 2: Dry run transaction
       const dryRunResult = await this.suiService.dryRunTransactionBlock(
         solution.transactionBytes,
       );
@@ -57,11 +67,26 @@ export class PreRankingService {
         return {
           passed: false,
           failureReason: 'Dry run failed',
-          errors: [{ message: dryRunResult.effects?.status?.error || 'Unknown error' }],
+          errors: [
+            { message: dryRunResult.effects?.status?.error || 'Unknown error' },
+          ],
         };
       }
 
-      // Step 3: Extract features
+      const complexValidationResult = await this.constraintValidator.validateComplexConstraints(
+        intent,
+        solution,
+        dryRunResult,
+      );
+
+      if (!complexValidationResult.isValid) {
+        return {
+          passed: false,
+          failureReason: 'Complex validation failed',
+          errors: complexValidationResult.errors,
+        };
+      }
+
       const features = this.extractFeatures(intent, solution, dryRunResult);
 
       return {
@@ -70,7 +95,9 @@ export class PreRankingService {
         dryRunResult,
       };
     } catch (error: any) {
-      this.logger.error(`Error processing solution ${solutionId}: ${error.message}`);
+      this.logger.error(
+        `Error processing solution ${submittedSolution.solutionId}: ${error.message}`,
+      );
       return {
         passed: false,
         failureReason: 'Processing error',
@@ -80,6 +107,8 @@ export class PreRankingService {
   }
 
   /**
+   * @deprecated 
+   * Replaced by processSingleSolution for instant preranking
    * Process solutions for an intent
    * Returns filtered solutions with feature vectors
    */
@@ -87,7 +116,9 @@ export class PreRankingService {
     intent: IGSIntent,
     solutions: Array<{ solutionId: string; solution: IGSSolution }>,
   ): Promise<PreRankingResult> {
-    this.logger.log(`PreRanking: Processing intent with ${solutions.length} solutions`);
+    this.logger.log(
+      `PreRanking: Processing intent with ${solutions.length} solutions`,
+    );
 
     const passedSolutions: string[] = [];
     const failedSolutions: Array<{
@@ -101,26 +132,23 @@ export class PreRankingService {
     let dryRunExecuted = 0;
     let dryRunSuccessful = 0;
 
-    // Classify intent first
     const classification = this.classifyIntent(intent);
 
-    // Process each solution
     for (const { solutionId, solution } of solutions) {
       try {
-        // Step 1: Validate constraints
-        const validationResult = await this.constraintValidator.validate(
-          intent,
-          solution,
-        );
+        // const validationResult = await this.constraintValidator.validate(
+        //   intent,
+        //   solution,
+        // );
 
-        if (!validationResult.isValid) {
-          failedSolutions.push({
-            solutionId,
-            failureReason: 'Constraint validation failed',
-            errors: validationResult.errors,
-          });
-          continue;
-        }
+        // if (!validationResult.isValid) {
+        //   failedSolutions.push({
+        //     solutionId,
+        //     failureReason: 'Constraint validation failed',
+        //     errors: validationResult.errors,
+        //   });
+        //   continue;
+        // }
 
         // Step 2: Dry run transaction
         dryRunExecuted++;
@@ -132,7 +160,11 @@ export class PreRankingService {
           failedSolutions.push({
             solutionId,
             failureReason: 'Dry run failed',
-            errors: [{ message: dryRunResult.effects?.status?.error || 'Unknown error' }],
+            errors: [
+              {
+                message: dryRunResult.effects?.status?.error || 'Unknown error',
+              },
+            ],
           });
           continue;
         }
@@ -152,7 +184,9 @@ export class PreRankingService {
 
         passedSolutions.push(solutionId);
       } catch (error: any) {
-        this.logger.error(`Error processing solution ${solutionId}: ${error.message}`);
+        this.logger.error(
+          `Error processing solution ${solutionId}: ${error.message}`,
+        );
         failedSolutions.push({
           solutionId,
           failureReason: 'Processing error',
@@ -218,7 +252,9 @@ export class PreRankingService {
     return 'other';
   }
 
-  private detectPriority(intent: IGSIntent): 'speed' | 'cost' | 'output' | 'balanced' {
+  private detectPriority(
+    intent: IGSIntent,
+  ): 'speed' | 'cost' | 'output' | 'balanced' {
     const goal = intent.preferences?.optimizationGoal;
     if (goal === 'fastest_execution') return 'speed';
     if (goal === 'minimize_gas') return 'cost';
@@ -226,7 +262,9 @@ export class PreRankingService {
     return 'balanced';
   }
 
-  private determineComplexity(intent: IGSIntent): 'simple' | 'moderate' | 'complex' {
+  private determineComplexity(
+    intent: IGSIntent,
+  ): 'simple' | 'moderate' | 'complex' {
     const inputCount = intent.operation.inputs.length;
     const outputCount = intent.operation.outputs.length;
     const hasConstraints = !!intent.constraints;
@@ -286,7 +324,10 @@ export class PreRankingService {
     return Number(dryRunResult.effects?.gasUsed?.computationCost || 0);
   }
 
-  private calculateSurplus(intent: IGSIntent, dryRunResult: any): {
+  private calculateSurplus(
+    intent: IGSIntent,
+    dryRunResult: any,
+  ): {
     usd: number;
     percentage: number;
   } {
