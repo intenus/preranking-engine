@@ -1,99 +1,644 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Intenus Backend - Intent Processing System
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+<div align="center">
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+**Event-Driven DeFi Intent Processing with Instant Solution Preranking**
 
-## Description
+[![NestJS](https://img.shields.io/badge/NestJS-10.x-E0234E?logo=nestjs)](https://nestjs.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript)](https://www.typescriptlang.org/)
+[![Sui](https://img.shields.io/badge/Sui-Blockchain-4DA2FF)](https://sui.io/)
+[![Redis](https://img.shields.io/badge/Redis-Storage-DC382D?logo=redis)](https://redis.io/)
+[![Tests](https://img.shields.io/badge/tests-64%20passing-success)](./test)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+</div>
 
-## Project setup
+---
 
-```bash
-$ pnpm install
+## 📋 Table of Contents
+
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Testing](#testing)
+- [API Documentation](#api-documentation)
+- [Deployment](#deployment)
+- [Contributing](#contributing)
+
+---
+
+## 🎯 Overview
+
+Intenus Backend is a NestJS-based microservice that processes DeFi intents using the **Intenus General Standard (IGS)**. It listens to blockchain events, fetches encrypted intent/solution data from Walrus, performs instant preranking validation, and forwards qualified solutions to AI ranking services.
+
+### What This Does
+
+1. **Event Listening** - Monitors Sui blockchain for `IntentSubmitted` and `SolutionSubmitted` events
+2. **Data Retrieval** - Fetches encrypted intents/solutions from Walrus decentralized storage
+3. **Instant Preranking** - Validates solutions immediately upon arrival using constraint-based filtering
+4. **State Management** - Stores all data in Redis with TTL for crash recovery
+5. **Queue Management** - Sends passed solutions to AI ranking service when solution window closes
+
+### What This Does NOT Do
+
+- ❌ Final ranking of solutions (handled by separate AI service)
+- ❌ Transaction execution (solutions are dry-run only)
+- ❌ Batch processing (deprecated - now event-driven)
+
+---
+
+## ✨ Key Features
+
+### Instant Preranking
+
+Solutions are validated **immediately** when `SolutionSubmitted` events arrive, not in batches:
+
+```typescript
+SolutionSubmitted Event → Fetch from Walrus → Validate Constraints → Dry Run → Store Result
 ```
 
-## Compile and run the project
+### Comprehensive Constraint Validation
 
-```bash
-# development
-$ pnpm run start
+Based on IGS schema, supports:
 
-# watch mode
-$ pnpm run start:dev
+- ✅ **Deadline** - Time-based solution acceptance
+- ✅ **Max Slippage** - Percentage-based slippage limits (basis points)
+- ✅ **Min Outputs** - Minimum output amounts (slippage protection)
+- ✅ **Max Inputs** - Spending ceiling limits
+- ✅ **Gas Limits** - Maximum gas cost constraints
+- ✅ **Routing** - Max hops, protocol blacklist/whitelist
+- ✅ **Limit Price** - Price limits for limit orders (GTE/LTE)
 
-# production mode
-$ pnpm run start:prod
+### Redis-Based State Management
+
+All data stored in Redis with 1-hour TTL:
+
+```
+sui:event:cursor           - Event cursor for crash recovery
+intents:{intentId}         - Full intent data
+solutions:passed:{id}      - Passed solutions
+solutions:failed:{id}      - Failed solutions  
+ranking:queue:{intentId}   - Queue for AI ranking
 ```
 
-## Run tests
+### Crash Recovery
 
-```bash
-# unit tests
-$ pnpm run test
+Event cursor persisted to Redis - service resumes from last processed event after restart.
 
-# e2e tests
-$ pnpm run test:e2e
+---
 
-# test coverage
-$ pnpm run test:cov
+## 🏗 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Sui Blockchain                           │
+│  IntentSubmitted Events │ SolutionSubmitted Events              │
+└────────────┬────────────┴──────────────────┬───────────────────┘
+             │                                │
+             ▼                                ▼
+    ┌────────────────┐              ┌────────────────┐
+    │  Sui Service   │              │  Sui Service   │
+    │  (Event Poll)  │              │  (Event Poll)  │
+    └────────┬───────┘              └────────┬───────┘
+             │ Emit                           │ Emit
+             │ intent.submitted               │ solution.submitted
+             ▼                                ▼
+    ┌──────────────────────────────────────────────────┐
+    │         Processing Service (Orchestrator)        │
+    │  - Manages solution windows                      │
+    │  - Coordinates instant preranking workflow       │
+    └──────┬────────────────────────────────┬──────────┘
+           │                                 │
+           ▼                                 ▼
+  ┌─────────────────┐             ┌──────────────────────┐
+  │ Walrus Service  │             │  PreRanking Service  │
+  │ - Fetch Intent  │             │  - Validate Now      │
+  │ - Fetch Solution│             │  - Dry Run           │
+  │ - Decrypt Data  │             │  - Extract Features  │
+  └────────┬────────┘             └──────────┬───────────┘
+           │                                  │
+           ▼                                  ▼
+  ┌──────────────────────────────────────────────────────┐
+  │              Redis Storage Service                    │
+  │  - Store intents/solutions (1h TTL)                  │
+  │  - Event cursor (crash recovery)                     │
+  │  - Ranking queue (AI service input)                  │
+  └──────────────────────────────────────────────────────┘
+                           │
+                           ▼ Window closes
+                  ┌──────────────────┐
+                  │  AI Ranking API  │
+                  │  (External)      │
+                  └──────────────────┘
 ```
 
-## Deployment
+### Data Flow
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+1. **Intent Submission**
+   ```
+   User → Blockchain → IntentSubmitted Event
+   → Fetch from Walrus → Store in Redis → Set Window Timeout
+   ```
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+2. **Solution Processing (Instant)**
+   ```
+   Solver → Blockchain → SolutionSubmitted Event
+   → Fetch from Walrus → Validate Constraints → Dry Run
+   → Pass/Fail → Store in Redis (immediate)
+   ```
 
-```bash
-$ pnpm install -g mau
-$ mau deploy
+3. **Window Close**
+   ```
+   Timeout Expires → Get Passed Solutions from Redis
+   → Send to AI Ranking API → Cleanup State
+   ```
+
+---
+
+## 📁 Project Structure
+
+```
+backend/
+├── src/
+│   ├── common/
+│   │   └── types/              # Type definitions from schemas
+│   │       ├── igs-intent.types.ts
+│   │       ├── igs-solution.types.ts
+│   │       ├── core.types.ts
+│   │       └── sui-events.types.ts
+│   ├── config/                 # Configuration
+│   │   ├── database.config.ts
+│   │   ├── redis.config.ts
+│   │   ├── sui.config.ts
+│   │   └── walrus.config.ts
+│   ├── modules/
+│   │   ├── sui/                # Blockchain event listener
+│   │   │   ├── sui.service.ts
+│   │   │   ├── sui.module.ts
+│   │   │   └── sui.service.spec.ts
+│   │   ├── walrus/             # Decentralized storage
+│   │   │   ├── walrus.service.ts
+│   │   │   ├── walrus.module.ts
+│   │   │   └── walrus.service.spec.ts
+│   │   ├── redis/              # State management
+│   │   │   ├── redis.service.ts
+│   │   │   ├── redis.module.ts
+│   │   │   └── redis.service.spec.ts
+│   │   ├── preranking/         # Instant validation
+│   │   │   ├── preranking.service.ts
+│   │   │   ├── preranking.module.ts
+│   │   │   ├── validators/
+│   │   │   │   ├── constraint.validator.ts
+│   │   │   │   └── constraint.validator.spec.ts
+│   │   │   └── preranking.service.spec.ts
+│   │   └── dataset/            # Dataset management
+│   │       ├── dataset.controller.ts
+│   │       └── dataset.service.ts
+│   ├── app.module.ts
+│   └── main.ts
+├── test/
+│   ├── mocks/                  # Test fixtures
+│   │   ├── intent.mock.ts
+│   │   ├── solution.mock.ts
+│   │   └── events.mock.ts
+│   └── app.e2e-spec.ts
+├── schemas/                    # JSON schemas
+│   ├── igs-intent-schema.json
+│   ├── igs-solution-schema.json
+│   └── core-schema.json
+├── .env.example
+├── package.json
+├── tsconfig.json
+├── ARCHITECTURE.md             # Detailed architecture docs
+├── CONSTRAINT_VALIDATION.md    # Validation guide
+└── README.md                   # This file
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+---
 
-## Resources
+## 🚀 Getting Started
 
-Check out a few resources that may come in handy when working with NestJS:
+### Prerequisites
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+- **Node.js** >= 18.x
+- **pnpm** >= 8.x (or npm/yarn)
+- **Redis** >= 7.x
+- **PostgreSQL** >= 14.x (optional, for metadata)
+- **Sui CLI** (optional, for local testing)
 
-## Support
+### Installation
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+# Clone the repository
+git clone https://github.com/intenus/backend.git
+cd backend
 
-## Stay in touch
+# Install dependencies
+pnpm install
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+# Copy environment variables
+cp .env.example .env
 
-## License
+# Edit .env with your configuration
+nano .env
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### Quick Start
+
+```bash
+# Development mode (auto-reload)
+pnpm start:dev
+
+# Production mode
+pnpm build
+pnpm start:prod
+
+# Run tests
+pnpm test
+
+# Run tests with coverage
+pnpm test:cov
+```
+
+---
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+Create a `.env` file based on `.env.example`:
+
+#### Sui Blockchain
+
+```env
+SUI_NETWORK=testnet
+SUI_RPC_URL=https://fullnode.testnet.sui.io
+SUI_INTENT_PACKAGE_ID=0x...    # Your deployed package ID
+SUI_EVENT_POLLING_INTERVAL_MS=2000
+SUI_AUTO_START_EVENT_LISTENER=true
+```
+
+#### Walrus Storage
+
+```env
+WALRUS_NETWORK=testnet
+WALRUS_PUBLISHER_URL=https://publisher.walrus-testnet.walrus.space
+WALRUS_AGGREGATOR_URL=https://aggregator.walrus-testnet.walrus.space
+WALRUS_DEFAULT_EPOCHS=5
+```
+
+#### Redis
+
+```env
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_URL=redis://localhost:6379  # Alternative to host/port
+```
+
+#### Application
+
+```env
+PORT=3000
+NODE_ENV=development
+LOG_LEVEL=debug
+CORS_ORIGIN=http://localhost:3001
+```
+
+### Configuration Files
+
+All configs in `src/config/`:
+
+- `sui.config.ts` - Blockchain connection
+- `walrus.config.ts` - Storage settings
+- `redis.config.ts` - Cache & queue
+- `database.config.ts` - PostgreSQL (optional)
+
+---
+
+## 💻 Development
+
+### Code Style
+
+This project follows **TypeScript + NestJS** best practices:
+
+- **Variables/Functions**: `camelCase`
+- **Classes/Interfaces**: `PascalCase`
+- **Types**: `PascalCase`
+- **Files**: `camelCase` (e.g., `sui.service.ts`)
+- **Constants**: `UPPER_SNAKE_CASE`
+
+### Linting & Formatting
+
+```bash
+# Lint code
+pnpm lint
+
+# Format code
+pnpm format
+
+# Fix linting issues
+pnpm lint --fix
+```
+
+### Development Workflow
+
+1. **Create Feature Branch**
+   ```bash
+   git checkout -b feature/your-feature
+   ```
+
+2. **Write Code**
+   - Follow NestJS module structure
+   - Add unit tests for services
+   - Update types if schemas change
+
+3. **Test**
+   ```bash
+   pnpm test
+   pnpm test:cov  # Check coverage
+   ```
+
+4. **Commit**
+   ```bash
+   git add .
+   git commit -m "feat: your feature description"
+   ```
+
+5. **Push & PR**
+   ```bash
+   git push origin feature/your-feature
+   # Create PR on GitHub
+   ```
+
+### Hot Reload
+
+```bash
+pnpm start:dev
+```
+
+Changes are automatically reloaded. Check terminal for errors.
+
+### Debugging
+
+```bash
+# Debug mode with inspector
+pnpm start:debug
+
+# Then attach debugger to localhost:9229
+```
+
+VS Code launch configuration:
+
+```json
+{
+  "type": "node",
+  "request": "attach",
+  "name": "Attach NestJS",
+  "port": 9229,
+  "restart": true
+}
+```
+
+---
+
+## 🧪 Testing
+
+### Test Structure
+
+```
+test/
+├── mocks/              # Reusable test fixtures
+│   ├── intent.mock.ts  # Sample intents
+│   ├── solution.mock.ts# Sample solutions
+│   └── events.mock.ts  # Sample events
+└── *.spec.ts           # Unit tests
+```
+
+### Running Tests
+
+```bash
+# All tests
+pnpm test
+
+# Watch mode (auto-rerun)
+pnpm test:watch
+
+# Coverage report
+pnpm test:cov
+
+# Specific test file
+pnpm test sui.service.spec.ts
+
+# Debug tests
+pnpm test:debug
+```
+
+### Test Coverage
+
+Current coverage: **64 tests passing**
+
+```
+Test Suites: 9 passed, 9 total
+Tests:       64 passed, 64 total
+Snapshots:   0 total
+```
+
+### Writing Tests
+
+Example service test:
+
+```typescript
+import { Test, TestingModule } from '@nestjs/testing';
+import { SuiService } from './sui.service';
+import { ConfigService } from '@nestjs/config';
+
+describe('SuiService', () => {
+  let service: SuiService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SuiService,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key) => {
+              // Mock config values
+            }),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get<SuiService>(SuiService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+
+  // More tests...
+});
+```
+
+---
+
+## 📚 API Documentation
+
+### Health Check
+
+```
+GET /health
+```
+
+Returns service status and uptime.
+
+<!-- ### Dataset Management
+
+```
+GET /dataset
+POST /dataset
+PUT /dataset/:id
+DELETE /dataset/:id
+```
+
+CRUD operations for intent/solution datasets (for ML training). -->
+
+### Internal Events (NestJS Event Emitter)
+
+```typescript
+// Intent submitted
+@OnEvent('intent.submitted')
+handleIntentSubmitted(event: IntentSubmittedEvent) { }
+
+// Solution submitted
+@OnEvent('solution.submitted')
+handleSolutionSubmitted(event: SolutionSubmittedEvent) { }
+```
+
+---
+
+## 🚢 Deployment
+
+### Docker
+
+```bash
+# Build image
+docker build -t intenus-backend .
+
+# Run container
+docker run -p 3000:3000 \
+  -e SUI_NETWORK=mainnet \
+  -e REDIS_URL=redis://redis:6379 \
+  intenus-backend
+```
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  backend:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - SUI_NETWORK=testnet
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+  
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+```
+
+### Production Checklist
+
+- [ ] Set `NODE_ENV=production`
+- [ ] Configure production Redis (e.g., AWS ElastiCache)
+- [ ] Set proper `SUI_RPC_URL` (mainnet)
+- [ ] Configure logging (external service)
+- [ ] Set up monitoring (Prometheus/Grafana)
+- [ ] Enable CORS only for trusted origins
+- [ ] Use environment secrets (not `.env` file)
+- [ ] Configure PM2 or systemd for process management
+
+## 🤝 Contributing
+
+### Contribution Guidelines
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Commit** your changes (`git commit -m 'feat: add amazing feature'`)
+4. **Push** to the branch (`git push origin feature/amazing-feature`)
+5. **Open** a Pull Request
+
+### Code Review Process
+
+All PRs require:
+- ✅ Passing tests (`pnpm test`)
+- ✅ Linting checks (`pnpm lint`)
+- ✅ Code review from maintainer
+- ✅ Updated documentation if needed
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT** license - see LICENSE file for details.
+
+---
+
+## 🆘 Support
+
+### Getting Help
+
+- **Issues**: [GitHub Issues](https://github.com/intenus/backend/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/intenus/backend/discussions)
+- **Documentation**: [Wiki](https://github.com/intenus/backend/wiki)
+
+### Common Issues
+
+**Redis Connection Failed**
+```bash
+# Check Redis is running
+redis-cli ping
+# Should return: PONG
+```
+
+**Sui RPC Timeout**
+```env
+# Try different RPC endpoint
+SUI_RPC_URL=https://fullnode.testnet.sui.io
+```
+
+**Event Polling Not Starting**
+```env
+# Enable auto-start
+SUI_AUTO_START_EVENT_LISTENER=true
+```
+
+---
+
+## 🙏 Acknowledgments
+
+- [NestJS](https://nestjs.com/) - Progressive Node.js framework
+- [Sui](https://sui.io/) - High-performance blockchain
+- [Walrus](https://walrus.site/) - Decentralized storage
+- [Redis](https://redis.io/) - In-memory data store
+
+---
+
+<div align="center">
+
+**Built with ❤️ by the Intenus Team**
+
+[Website](https://intenus.org) • [GitHub](https://github.com/intenus) • [Twitter](https://twitter.com/intenus)
+
+</div>
