@@ -1,0 +1,120 @@
+{
+  "version": "1.0.0",
+  "sources": {
+    "suiPriceDefiLlama": {
+      "type": "oracle",
+      "description": "SUI token price from DefiLlama",
+      "config": {
+        "provider": "defillama",
+        "config": {
+          "endpoint": "prices",
+          "coins": ["sui:0x2::sui::SUI"]
+        }
+      },
+      "cache": {
+        "enabled": true,
+        "ttlMs": 30000
+      }
+    },
+    "usdcPriceDefiLlama": {
+      "type": "oracle",
+      "description": "USDC price from DefiLlama",
+      "config": {
+        "provider": "defillama",
+        "config": {
+          "endpoint": "prices",
+          "coins": ["sui:0xusdc::usdc::USDC"]
+        }
+      },
+      "cache": {
+        "enabled": true,
+        "ttlMs": 30000
+      }
+    },
+    "suiHistoricalDefiLlama": {
+      "type": "oracle",
+      "description": "SUI historical price data from DefiLlama",
+      "config": {
+        "provider": "defillama",
+        "config": {
+          "endpoint": "historical",
+          "coins": ["sui:0x2::sui::SUI"],
+          "timestamp": 1700000000,
+          "period": "1h"
+        }
+      },
+      "cache": {
+        "enabled": true,
+        "ttlMs": 300000
+      }
+    },
+    "cetusPoolPrice": {
+      "type": "onchain",
+      "description": "Spot price from Cetus SUI/USDC pool",
+      "config": {
+        "method": "objectRead",
+        "packageId": "0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb",
+        "poolAddress": "{{context.poolAddress}}"
+      },
+      "cache": {
+        "enabled": true,
+        "ttlMs": 5000
+      }
+    },
+    "cetusSwapQuote": {
+      "type": "onchain",
+      "description": "Swap quote from Cetus pool",
+      "config": {
+        "method": "moveCall",
+        "packageId": "0x1eabed72c53feb3805120a081dc15963c204dc8d091542592abaf7a35689b2fb",
+        "moduleName": "pool",
+        "functionName": "calculate_swap_result",
+        "typeArguments": [
+          "0x2::sui::SUI",
+          "0xusdc::usdc::USDC"
+        ],
+        "arguments": [
+          "{{context.poolAddress}}",
+          "true",
+          "true",
+          "{{intent.operation.inputs[0].amount}}"
+        ]
+      },
+      "cache": {
+        "enabled": true,
+        "ttlMs": 5000
+      }
+    },
+    "aggregatedPrice": {
+      "type": "aggregator",
+      "description": "Aggregated price from DefiLlama and Cetus (median)",
+      "config": {
+        "sources": ["suiPriceDefiLlama", "cetusPoolPrice"],
+        "strategy": "median",
+        "minimumSources": 1,
+        "maxDeviation": 0.05
+      },
+      "cache": {
+        "enabled": true,
+        "ttlMs": 10000
+      }
+    },
+    "weightedAveragePrice": {
+      "type": "aggregator",
+      "description": "Weighted average price (70% DefiLlama, 30% Cetus)",
+      "config": {
+        "sources": ["suiPriceDefiLlama", "cetusPoolPrice"],
+        "strategy": "average",
+        "weights": {
+          "suiPriceDefiLlama": 0.7,
+          "cetusPoolPrice": 0.3
+        },
+        "minimumSources": 2
+      },
+      "cache": {
+        "enabled": true,
+        "ttlMs": 10000
+      }
+    }
+  }
+}

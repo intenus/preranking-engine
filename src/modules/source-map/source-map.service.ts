@@ -32,8 +32,7 @@ export class SourceMapService {
 
   private async loadSourceMap(): Promise<void> {
     try {
-      // Load source map from config
-      this.sourceMap = require('../../../../schemas/examples/source-map.example.json');
+      this.sourceMap = require('./source/source-map.json');
       this.logger.log(`Loaded source map with ${Object.keys(this.sourceMap.sources).length} sources`);
     } catch (error) {
       this.logger.error('Failed to load source map', error);
