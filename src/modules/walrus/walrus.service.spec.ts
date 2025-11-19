@@ -71,6 +71,19 @@ describe('WalrusService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('fetch', () => { 
+    it('should fetch and return data from Walrus', async () => {
+      const blobId = 'LQr4SAAEyBDS53CTP7Wfq4CVPwGZJe_B3uRZSofNRhw';
+      const buffer = Buffer.from('test data');
+      mockWalrusClient.fetchRaw.mockResolvedValue(buffer);
+
+      const result = await service.fetchRaw(blobId);
+
+      expect(result).toEqual(buffer);
+      expect(mockWalrusClient.fetchRaw).toHaveBeenCalledWith(blobId);
+    });
+  });
+
   describe('fetchIntent', () => {
     it('should fetch and return intent from Walrus', async () => {
       const blobId = 'blob-intent-123';

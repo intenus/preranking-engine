@@ -16,6 +16,7 @@ import { SuiModule } from './modules/sui/sui.module';
 import { DatasetModule } from './modules/dataset/dataset.module';
 import { ProcessingModule } from '../processing/processing.module';
 import { PreRankingModule } from './modules/preranking/preranking.module';
+import { SourceMapModule } from './modules/source-map/source-map.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { PreRankingModule } from './modules/preranking/preranking.module';
     PreRankingModule,
     ProcessingModule,
     // BatchModule, // Deprecated - see src/modules/batch/DEPRECATED.ts
+    SourceMapModule,
     DatasetModule,
   ],
   controllers: [AppController],

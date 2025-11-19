@@ -9,6 +9,7 @@ import {
   IntentSubmittedEvent,
   SolutionSubmittedEvent,
 } from '../../../common/types/sui-events.types';
+import { SourceMapService } from 'src/modules/source-map/source-map.service';
 
 interface ValidationResult {
   isValid: boolean;
@@ -36,7 +37,10 @@ interface ParsedTransaction {
 export class ConstraintValidator {
   private readonly logger = new Logger(ConstraintValidator.name);
 
-  constructor(private readonly suiService: SuiService) {}
+  constructor(
+    private readonly suiService: SuiService,
+    private readonly sourceMapService: SourceMapService,
+  ) {}
 
   /**
    * Main validation entry point
@@ -233,8 +237,60 @@ export class ConstraintValidator {
     }
 
     // 4. Validate limit price
+
+    return {
+      isValid: errors.filter((e) => e.severity === 'error').length === 0,
+      errors,
+    };
+  }
+
+  private async validateLimitPrice(
+    intent: IGSIntent,
+    dryRunResult: any,
+    constraints: IGSConstraints,
+    errors: ValidationResult['errors'],
+  ) {
     if (constraints.limitPrice) {
       const { price, comparison, priceAsset } = constraints.limitPrice;
+      const limitPriceConstraint = constraints.limitPrice;
+
+      try {
+        // Fetch current price from source map
+        const priceResult = await this.sourceMapService.fetch<number>(
+          "suiPriceDefiLlama",
+          intent,
+        );
+
+        const currentPrice = priceResult.value;
+        const limitPrice = Number(limitPriceConstraint.price);
+        const comparison = limitPriceConstraint.comparison;
+
+        let isValid = false;
+        if (comparison === 'gte') {
+          isValid = currentPrice >= limitPrice;
+        } else if (comparison === 'lte') {
+          isValid = currentPrice <= limitPrice;
+        }
+
+        if (!isValid) {
+          errors.push({
+            field: 'limitPrice',
+            message: `Price ${currentPrice} does not meet limit ${comparison} ${limitPrice}`,
+            severity: 'error',
+          });
+        }
+
+        this.logger.debug(
+          `Limit price validation: current=${currentPrice}, limit=${limitPrice} (${comparison}), valid=${isValid}`,
+        );
+      } catch (error) {
+        this.logger.error('Failed to fetch price from source map', error);
+        errors.push({
+          field: 'limitPrice',
+          message: `Failed to fetch price: ${error.message}`,
+          severity: 'error',
+        });
+      }
 
       // Extract actual execution price from dry run
       const actualPrice = this.calculateExecutionPrice(
@@ -265,11 +321,6 @@ export class ConstraintValidator {
         });
       }
     }
-
-    return {
-      isValid: errors.filter((e) => e.severity === 'error').length === 0,
-      errors,
-    };
   }
 
   /**
@@ -277,7 +328,7 @@ export class ConstraintValidator {
    * In production, this should use @mysten/sui.js to deserialize PTB
    */
   private parseTransactionBytes(transactionBytes: string): ParsedTransaction {
-    const txn = this.suiService.getSuiClient()
+    const txn = this.suiService.getSuiClient();
 
     return {
       inputs: [],

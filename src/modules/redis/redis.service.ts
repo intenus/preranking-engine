@@ -46,6 +46,18 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.duplicate();
   }
 
+  async get(key: string): Promise<string | null> {
+    return this.client.get(key);
+  }
+
+  async set(key: string, value: string): Promise<'OK'> {
+    return this.client.set(key, value);
+  }
+
+  async setWithExpiry(key: string, value: string, seconds: number): Promise<'OK'> {
+    return this.client.set(key, value, 'EX', seconds);
+  }
+
   // ===== INTENT STORAGE =====
 
   /**
