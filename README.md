@@ -15,24 +15,29 @@
 
 ## Table of Contents
 
-- [What is Prerank Engine](#what-is-prerank-engine)
+- [Prerank Engine Overview](#prerank-engine-overview)
 - [System Workflow](#system-workflow)
-- [Architecture](#architecture)
-- [Integration](#integration)
+- [Architecture Overview](#architecture-overview)
+- [External integrations](#external-integrations)
 
 ---
 
-## What is Prerank Engine
+## Prerank Engine Overview
 
-Intenus Prerank engine is a NestJS-based microservice that processes submitted intents and solutions using the **Intenus General Standard (IGS)**. It listens to blockchain events, fetches encrypted intent/solution data from Walrus, performs instant preranking validation, and forwards qualified solutions to AI ranking services.
+The **Prerank Engine** is the first validation layer in the Intenus intent-based trading pipeline. It acts as an intelligent filter that validates solver-submitted solutions against user-defined constraints before forwarding them to expensive AI ranking services.
 
-### Key feature
+**The Challenge It Solves:**
 
-1. **Event Listening** - Monitors Sui blockchain for `IntentSubmitted` and `SolutionSubmitted` events
-2. **Data Retrieval** - Fetches encrypted intents/solutions from Walrus decentralized storage
-3. **Preranking** - Validates solutions immediately upon arrival using constraint-based filtering
-4. **State Management** - Stores all data in Redis with TTL for crash recovery, there also Postgres for long-term and history cursor store
-5. **Queue Management** - Sends passed solutions to AI ranking service when solution window closes
+- High computational costs (AI ranking is expensive)
+- Exposure to invalid solutions that could fail or lose user funds
+
+**How Prerank Engine Helps:**
+
+1. Monitors Sui blockchain for `IntentSubmitted` and `SolutionSubmitted` events
+2. Fetches encrypted intent/solution data from Walrus decentralized storage
+3. Performs instant constraint-based validation (deadline, slippage, gas limits, routing rules)
+4. Filters out invalid solutions before they reach AI ranking
+5. Provide features vector for ranking calculations.
 
 ---
 
@@ -40,68 +45,96 @@ Intenus Prerank engine is a NestJS-based microservice that processes submitted i
 
 ### Complete User Journey
 
-**1. User Submits Intent (On-Chain)**
+#### Phase 1: Intent Submission
+
+**User Action:** Creates intent on-chain
 ```
-User: "Swap 100 SUI for max USDC, <2% slippage, 5min window"
+Example: "Swap 100 SUI for max USDC, <2% slippage, 5min window"
   ↓
-Sui blockchain emits IntentSubmitted event
+Sui blockchain emits IntentSubmitted event with Walrus blobId
   ↓
-Prerank Engine detects event (2s polling)
+Prerank Engine detects event (polling every 2s)
   ↓
-Fetches encrypted intent from Walrus storage
+Fetches encrypted intent from Walrus storage via HTTP
   ↓
-Stores in Redis + sets 5-minute timeout
+Stores complete intent data in Redis (1h TTL)
   ↓
-Waits for solver solutions...
+Sets timeout timer for solution window (5 minutes)
+  ↓
+System ready to receive solver solutions
 ```
 
-**2. Solvers Submit Solutions (On-Chain)**
+#### Phase 2: Solution Validation
+
+**Solver Action:** Submits solution transaction on-chain
 ```
-Solver: Submits transaction solving the intent
+Solver constructs transaction to fulfill intent
   ↓
 Sui blockchain emits SolutionSubmitted event
   ↓
 Prerank Engine detects event immediately
   ↓
-Fetches solution from Walrus
+Fetches solution data from Walrus
   ↓
-INSTANT VALIDATION (500-1000ms total):
-  ├─ ✓ Deadline: Submitted before window closed?
-  ├─ ✓ Routing: Uses allowed protocols?
-  ├─ ✓ Dry-run: Simulate transaction on Sui network
-  │   └─ Extract actual outputs, gas cost
-  ├─ ✓ Slippage: Within user's 2% tolerance?
-  ├─ ✓ Min outputs: Meets minimum amounts?
-  └─ ✓ Gas budget: Within cost limits?
+VALIDATION PIPELINE (500-1000ms):
+│
+├─ 1. Pre-Flight Checks (Fast)
+│   ✓ Deadline: Submitted before window closed?
+│   ✓ Routing: Uses whitelisted protocols only?
+│   ✓ Max Inputs: Within spending limits?
+│
+├─ 2. Blockchain Simulation (Expensive)
+│   ✓ Dry-run: Execute on Sui testnet
+│   └─ Extracts: actual outputs, gas cost, events
+│
+└─ 3. Output Validation (Accuracy)
+    ✓ Slippage: Within user's 2% tolerance?
+    ✓ Min Outputs: Meets minimum receive amounts?
+    ✓ Gas Budget: Under maximum cost limit?
   ↓
-PASS → Store in Redis: solution:passed:{intentId}
-FAIL → Store in Redis: failed:{intentId} (audit log)
+RESULT:
+  PASS → Store in Redis: solution:passed:{intentId}:{solutionId}
+  FAIL → Store in Redis: failed:{intentId}:{solutionId} + reason
 ```
 
-**3. Window Closes (Automatic)**
+#### Phase 3: Window Close & Ranking
+
+**System Action:** Automatic processing when timer expires
 ```
-Timer expires
+Solution window timer expires (5 minutes reached)
   ↓
-Prerank Engine collects all PASSED solutions from Redis
+Prerank Engine queries Redis for all PASSED solutions
   ↓
-Sends to AI Ranking service via Redis queue
+Constructs payload: { intentId, passedSolutions[], metadata }
   ↓
-AI ranks by quality/efficiency
+Pushes to Redis queue: ranking:queue:{intentId}
   ↓
-Best solution returned to user
+AI Ranking Service (external) consumes queue
+  ↓
+Ranks solutions by quality, efficiency, historical performance
+  ↓
+Returns best solution to user wallet
+  ↓
+Cleanup: Remove intent context from memory
 ```
 
 ### Validation Rules
 
-| Constraint | User Benefit | Example |
-|------------|--------------|---------|
-| **Deadline** | Solution arrives on time | "Execute within 5 minutes" |
-| **Max Slippage** | Price protection | "Maximum 2% slippage (200 bps)" |
-| **Min Outputs** | Amount guarantee | "Receive ≥950 USDC" |
-| **Max Inputs** | Spending ceiling | "Spend ≤100 SUI" |
-| **Gas Budget** | Cost control | "Max $2 gas fees" |
-| **Routing** | Protocol safety | "Don't use risky protocols" |
-| **Limit Price** | Price bounds | "SUI price must be ≥$3.00" |
+The engine validates solutions against **IGS (Intenus General Standard)** constraints defined by users:
+
+| Constraint Type | What It Protects | Real-World Example |
+|-----------------|------------------|-------------------|
+| **Deadline** | Time-bound execution | "Must execute within 5 minutes of submission" |
+| **Max Slippage** | Price deviation tolerance | "Price can move maximum 2% (200 basis points)" |
+| **Min Outputs** | Guaranteed receive amounts | "Must receive at least 950 USDC (not less)" |
+| **Max Inputs** | Spending ceiling protection | "Don't spend more than 100 SUI" |
+| **Gas Budget** | Transaction cost limits | "Gas fees cannot exceed $2 worth of SUI" |
+| **Routing Rules** | Protocol safety controls | "Only use Cetus DEX, block risky protocols" |
+| **Limit Price** | Price boundary enforcement | "Only execute if SUI ≥ $3.00" |
+
+**Validation Strategy:**
+- **Fast-fail approach:** Check cheap constraints first (deadline, routing) before expensive ones (dry-run simulation)
+- **Two-phase validation:** Pre-flight checks → Blockchain simulation → Output verification
 
 ## Architecture Overview
 
@@ -150,66 +183,89 @@ Best solution returned to user
 
 ### Event Processing Flow
 
-1. **Intent Submission**
-   ```
-   User → Blockchain → IntentSubmitted Event
-   → Fetch from Walrus → Store in Redis → Set Window Timeout
-   ```
+**Intent Lifecycle:**
+```
+User → Sui Blockchain (IntentSubmitted event)
+  → Walrus fetch (encrypted intent blob)
+  → Redis storage (intent:{id}, 1h TTL)
+  → Window timer starts
+```
 
-2. **Solution Processing (Instant)**
-   ```
-   Solver → Blockchain → SolutionSubmitted Event
-   → Fetch from Walrus → Validate Constraints → Dry Run
-   → Pass/Fail → Store in Redis (immediate)
-   ```
+**Solution Lifecycle:**
+```
+Solver → Sui Blockchain (SolutionSubmitted event)
+  → Walrus fetch (solution blob)
+  → Validation pipeline (constraints + dry-run)
+  → Redis storage (passed/failed state)
+```
 
-3. **Window Close**
-   ```
-   Timeout Expires → Get Passed Solutions from Redis
-   → Send to AI Ranking API → Cleanup State
-   ```
+**Ranking Handoff:**
+```
+Window expires → Collect passed solutions from Redis
+  → Push to ranking queue
+  → Send to AI Ranking
+```
+
+**State Management:**
+- **Redis (Hot Storage):** Active intents, recent solutions, event cursor, cache (1h TTL)
+- **PostgreSQL (Cold Storage):** Historical cursor states, audit logs, long-term analytics
 
 ## External Integrations
 
-### Connection Points
+### 1. Blockchain Layer (Sui Network)
 
-**1. Blockchain Integration (Sui Network)**
-- **Connection:** Polls Sui RPC endpoint every 2 seconds for new events
-- **Events Monitored:** `IntentSubmitted`, `SolutionSubmitted` from deployed Move contract
-- **State Management:** Event cursor persisted in Redis for crash recovery
-- **Dry-run Capability:** Simulates transactions on Sui network to extract outputs and gas costs
+**Purpose:** Event monitoring and transaction simulation
 
-**2. Decentralized Storage (Walrus)**
-- **Protocol:** HTTP GET requests to Walrus aggregator nodes
-- **Data Retrieved:** Encrypted intent/solution blobs (too large for blockchain events)
-- **Blob Identification:** Uses `blobId` from blockchain events
+- **Connection:** Polls Sui RPC endpoint every 2 seconds
+- **Events:** `IntentSubmitted`, `SolutionSubmitted` from deployed Move contract
+- **Dry-Run:** Simulates transactions without executing to extract outputs and gas costs
+- **State Tracking:** Event cursor persisted in Redis (crash recovery) and PostgreSQL (audit trail)
 
-**3. State & Cache Layer (Redis)**
-- **Purpose:** Fast in-memory storage for active intents and validated solutions
-- **Key Patterns:**
-  - `sui:event:cursor` - Last processed blockchain event (persistent)
-  - `intent:{intentId}` - Full intent data with 1-hour TTL
-  - `solution:passed:{intentId}:{solutionId}` - Valid solutions (1-hour TTL)
-  - `failed:{intentId}:{solutionId}` - Failed solutions for audit (1-hour TTL)
-  - `ranking:queue:{intentId}` - Queue for AI service consumption
-  - `cache:source:{sourceId}` - Oracle price data (5-30s TTL) (Future works)
+### 2. Decentralized Storage (Walrus)
 
-**4. Market Data (Oracle Integration)**
-- **SourceMap System:** Flexible multi-provider architecture for price feeds
-- **Providers:**
-  - **DefiLlama** - Off-chain aggregated prices via HTTP API (30s cache)
-  - **Cetus DEX** - On-chain pool reads via Sui RPC (5s cache)
-  - **Aggregators** - Median/average combinations for manipulation resistance
-- **Usage:** Validates slippage constraints and limit prices
+**Purpose:** Off-chain data storage for large payloads
 
-**5. AI Ranking Service (Downstream)**
-- **Protocol:** Redis queue-based async communication
-- **Data Format:** JSON payload with `{ intentId, solutions[], metadata }`
-- **Trigger:** Automatically pushed when solution window closes
-- **Decoupling:** AI service is separate microservice (not in this repo)
+- **Protocol:** HTTP GET to Walrus aggregator nodes
+- **Data:** Encrypted intent/solution blobs (transaction bytes, metadata)
+- **Trigger:** BlobId emitted in blockchain events
+- **Network:** Supports testnet and mainnet configurations
+
+### 3. Cache & State (Redis)
+
+**Purpose:** High-speed in-memory storage for active data
+
+**Key Schema:**
+```
+sui:event:cursor                          → Last processed event (persistent)
+intent:{intentId}                         → Intent metadata + IGS spec (1h TTL)
+solution:passed:{intentId}:{solutionId}   → Valid solutions (1h TTL)
+failed:{intentId}:{solutionId}            → Failed solutions + reasons (1h TTL)
+ranking:queue:{intentId}                  → AI service input queue (1h TTL)
+cache:source:{sourceId}                   → Oracle price data (5-30s TTL)
+```
+
+### 4. Market Data (Price Oracles)
+
+**Purpose:** Multi-source price validation for slippage and limit orders
+
+**SourceMap Architecture:**
+- **DefiLlama Provider:** Off-chain aggregated CEX/DEX prices (HTTP API, 30s cache)
+- **Cetus DEX Provider:** On-chain pool state reads (Sui RPC, 5s cache)
+- **Aggregation Strategies:** Median/average/weighted combinations for manipulation resistance
+
+**Usage:** Validates `maxSlippageBps` and `limitPrice` constraints against real-time market data
+
+### 5. Database (PostgreSQL)
+
+**Purpose:** Long-term persistence cursor store
+
+---
+
 
 <div align="center">
 
 **Built by the Intenus Team**
 
 </div>
+
+---
