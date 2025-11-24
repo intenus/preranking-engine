@@ -8,13 +8,12 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 [![Sui](https://img.shields.io/badge/Sui-Blockchain-4DA2FF)](https://sui.io/)
 [![Redis](https://img.shields.io/badge/Redis-Storage-DC382D?logo=redis)](https://redis.io/)
-[![Tests](https://img.shields.io/badge/tests-64%20passing-success)](./test)
 
 </div>
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Key Features](#key-features)
@@ -22,15 +21,10 @@
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [Configuration](#configuration)
-- [Development](#development)
-- [Testing](#testing)
-- [API Documentation](#api-documentation)
-- [Deployment](#deployment)
-- [Contributing](#contributing)
 
 ---
 
-## 🎯 Overview
+## Overview
 
 Intenus Prerank engine is a NestJS-based microservice that processes DeFi intents using the **Intenus General Standard (IGS)**. It listens to blockchain events, fetches encrypted intent/solution data from Walrus, performs instant preranking validation, and forwards qualified solutions to AI ranking services.
 
@@ -44,13 +38,13 @@ Intenus Prerank engine is a NestJS-based microservice that processes DeFi intent
 
 ### What This Does NOT Do
 
-- ❌ Final ranking of solutions (handled by separate AI service)
-- ❌ Transaction execution (solutions are dry-run only)
-- ❌ Batch processing (deprecated - now event-driven)
+-  Final ranking of solutions (handled by separate AI service)
+-  Transaction execution (solutions are dry-run only)
+-  Batch processing (deprecated - now event-driven)
 
 ---
 
-## ✨ Key Features
+##  Key Features
 
 ### Instant Preranking
 
@@ -64,13 +58,13 @@ SolutionSubmitted Event → Fetch from Walrus → Validate Constraints → Dry R
 
 Based on IGS schema, supports:
 
-- ✅ **Deadline** - Time-based solution acceptance
-- ✅ **Max Slippage** - Percentage-based slippage limits (basis points)
-- ✅ **Min Outputs** - Minimum output amounts (slippage protection)
-- ✅ **Max Inputs** - Spending ceiling limits
-- ✅ **Gas Limits** - Maximum gas cost constraints
-- ✅ **Routing** - Max hops, protocol blacklist/whitelist
-- ✅ **Limit Price** - Price limits for limit orders (GTE/LTE)
+-  **Deadline** - Time-based solution acceptance
+-  **Max Slippage** - Percentage-based slippage limits (basis points)
+-  **Min Outputs** - Minimum output amounts (slippage protection)
+-  **Max Inputs** - Spending ceiling limits
+-  **Gas Limits** - Maximum gas cost constraints
+-  **Routing** - Max hops, protocol blacklist/whitelist
+-  **Limit Price** - Price limits for limit orders (GTE/LTE)
 
 ### Redis-Based State Management
 
@@ -90,7 +84,7 @@ Event cursor persisted to Redis - service resumes from last processed event afte
 
 ---
 
-## 🏗 Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -158,7 +152,7 @@ Event cursor persisted to Redis - service resumes from last processed event afte
 
 ---
 
-## 📁 Project Structure (Not updated)
+## Project Structure (Not updated)
 
 ```
 backend/
@@ -217,7 +211,7 @@ backend/
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -263,7 +257,7 @@ pnpm test:cov
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -317,195 +311,6 @@ All configs in `src/config/`:
 
 ---
 
-## 💻 Development
-
-### Code Style
-
-This project follows **TypeScript + NestJS** best practices:
-
-- **Variables/Functions**: `camelCase`
-- **Classes/Interfaces**: `PascalCase`
-- **Types**: `PascalCase`
-- **Files**: `camelCase` (e.g., `sui.service.ts`)
-- **Constants**: `UPPER_SNAKE_CASE`
-
-### Linting & Formatting
-
-```bash
-# Lint code
-pnpm lint
-
-# Format code
-pnpm format
-
-# Fix linting issues
-pnpm lint --fix
-```
-
-### Development Workflow
-
-1. **Create Feature Branch**
-   ```bash
-   git checkout -b feature/your-feature
-   ```
-
-2. **Write Code**
-   - Follow NestJS module structure
-   - Add unit tests for services
-   - Update types if schemas change
-
-3. **Test**
-   ```bash
-   pnpm test
-   pnpm test:cov  # Check coverage
-   ```
-
-4. **Commit**
-   ```bash
-   git add .
-   git commit -m "feat: your feature description"
-   ```
-
-5. **Push & PR**
-   ```bash
-   git push origin feature/your-feature
-   # Create PR on GitHub
-   ```
-
-### Hot Reload
-
-```bash
-pnpm start:dev
-```
-
-Changes are automatically reloaded. Check terminal for errors.
-
-### Debugging
-
-```bash
-# Debug mode with inspector
-pnpm start:debug
-
-# Then attach debugger to localhost:9229
-```
-
-VS Code launch configuration:
-
-```json
-{
-  "type": "node",
-  "request": "attach",
-  "name": "Attach NestJS",
-  "port": 9229,
-  "restart": true
-}
-```
-
----
-
-## 🧪 Testing
-
-### Test Structure
-
-```
-test/
-├── mocks/              # Reusable test fixtures
-│   ├── intent.mock.ts  # Sample intents
-│   ├── solution.mock.ts# Sample solutions
-│   └── events.mock.ts  # Sample events
-└── *.spec.ts           # Unit tests
-```
-
-### Running Tests
-
-```bash
-# All tests
-pnpm test
-
-# Watch mode (auto-rerun)
-pnpm test:watch
-
-# Coverage report
-pnpm test:cov
-
-# Specific test file
-pnpm test sui.service.spec.ts
-
-# Debug tests
-pnpm test:debug
-```
-
-### Test Coverage
-
-Current coverage: **64 tests passing**
-
-```
-Test Suites: 9 passed, 9 total
-Tests:       64 passed, 64 total
-Snapshots:   0 total
-```
-
-### Writing Tests
-
-Example service test:
-
-```typescript
-import { Test, TestingModule } from '@nestjs/testing';
-import { SuiService } from './sui.service';
-import { ConfigService } from '@nestjs/config';
-
-describe('SuiService', () => {
-  let service: SuiService;
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        SuiService,
-        {
-          provide: ConfigService,
-          useValue: {
-            get: jest.fn((key) => {
-              // Mock config values
-            }),
-          },
-        },
-      ],
-    }).compile();
-
-    service = module.get<SuiService>(SuiService);
-  });
-
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
-  // More tests...
-});
-```
-
----
-
-## 📚 API Documentation
-
-### Health Check
-
-```
-GET /health
-```
-
-Returns service status and uptime.
-
-<!-- ### Dataset Management
-
-```
-GET /dataset
-POST /dataset
-PUT /dataset/:id
-DELETE /dataset/:id
-```
-
-CRUD operations for intent/solution datasets (for ML training). -->
-
 ### Internal Events (NestJS Event Emitter)
 
 ```typescript
@@ -520,111 +325,7 @@ handleSolutionSubmitted(event: SolutionSubmittedEvent) { }
 
 ---
 
-## 🚢 Deployment
-
-### Docker
-
-```bash
-# Build image
-docker build -t intenus-backend .
-
-# Run container
-docker run -p 3000:3000 \
-  -e SUI_NETWORK=mainnet \
-  -e REDIS_URL=redis://redis:6379 \
-  intenus-backend
-```
-
-### Docker Compose
-
-```yaml
-version: '3.8'
-services:
-  backend:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - SUI_NETWORK=testnet
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - redis
-  
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-```
-
-### Production Checklist
-
-- [ ] Set `NODE_ENV=production`
-- [ ] Configure production Redis (e.g., AWS ElastiCache)
-- [ ] Set proper `SUI_RPC_URL` (mainnet)
-- [ ] Configure logging (external service)
-- [ ] Set up monitoring (Prometheus/Grafana)
-- [ ] Enable CORS only for trusted origins
-- [ ] Use environment secrets (not `.env` file)
-- [ ] Configure PM2 or systemd for process management
-
-## 🤝 Contributing
-
-### Contribution Guidelines
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'feat: add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
-
-### Code Review Process
-
-All PRs require:
-- ✅ Passing tests (`pnpm test`)
-- ✅ Linting checks (`pnpm lint`)
-- ✅ Code review from maintainer
-- ✅ Updated documentation if needed
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT** license - see LICENSE file for details.
-
----
-
-## 🆘 Support
-
-### Getting Help
-
-- **Issues**: [GitHub Issues](https://github.com/intenus/backend/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/intenus/backend/discussions)
-- **Documentation**: [Wiki](https://github.com/intenus/backend/wiki)
-
-### Common Issues
-
-**Redis Connection Failed**
-```bash
-# Check Redis is running
-redis-cli ping
-# Should return: PONG
-```
-
-**Sui RPC Timeout**
-```env
-# Try different RPC endpoint
-SUI_RPC_URL=https://fullnode.testnet.sui.io
-```
-
-**Event Polling Not Starting**
-```env
-# Enable auto-start
-SUI_AUTO_START_EVENT_LISTENER=true
-```
-
----
-
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 - [NestJS](https://nestjs.com/) - Progressive Node.js framework
 - [Sui](https://sui.io/) - High-performance blockchain
@@ -635,8 +336,6 @@ SUI_AUTO_START_EVENT_LISTENER=true
 
 <div align="center">
 
-**Built with ❤️ by the Intenus Team**
-
-[Website](https://intenus.org) • [GitHub](https://github.com/intenus) • [Twitter](https://twitter.com/intenus)
+**Built with by the Intenus Team**
 
 </div>
