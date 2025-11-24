@@ -1,4 +1,4 @@
-# Intenus Backend - Intent Processing System
+# Intenus Prerank Engine - Intent Processing System
 
 <div align="center">
 
@@ -32,7 +32,7 @@
 
 ## 🎯 Overview
 
-Intenus Backend is a NestJS-based microservice that processes DeFi intents using the **Intenus General Standard (IGS)**. It listens to blockchain events, fetches encrypted intent/solution data from Walrus, performs instant preranking validation, and forwards qualified solutions to AI ranking services.
+Intenus Prerank engine is a NestJS-based microservice that processes DeFi intents using the **Intenus General Standard (IGS)**. It listens to blockchain events, fetches encrypted intent/solution data from Walrus, performs instant preranking validation, and forwards qualified solutions to AI ranking services.
 
 ### What This Does
 
@@ -158,7 +158,7 @@ Event cursor persisted to Redis - service resumes from last processed event afte
 
 ---
 
-## 📁 Project Structure
+## 📁 Project Structure (Not updated)
 
 ```
 backend/
@@ -212,8 +212,6 @@ backend/
 ├── .env.example
 ├── package.json
 ├── tsconfig.json
-├── ARCHITECTURE.md             # Detailed architecture docs
-├── CONSTRAINT_VALIDATION.md    # Validation guide
 └── README.md                   # This file
 ```
 
