@@ -15,18 +15,18 @@
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [How it works](#how-it-works)
+- [What is Prerank Engine](#what-is-prerank-engine)
+- [System Workflow](#system-workflow)
 - [Architecture](#architecture)
 - [Integration](#integration)
 
 ---
 
-## Overview
+## What is Prerank Engine
 
 Intenus Prerank engine is a NestJS-based microservice that processes submitted intents and solutions using the **Intenus General Standard (IGS)**. It listens to blockchain events, fetches encrypted intent/solution data from Walrus, performs instant preranking validation, and forwards qualified solutions to AI ranking services.
 
-### What This Does
+### Key feature
 
 1. **Event Listening** - Monitors Sui blockchain for `IntentSubmitted` and `SolutionSubmitted` events
 2. **Data Retrieval** - Fetches encrypted intents/solutions from Walrus decentralized storage
@@ -34,16 +34,11 @@ Intenus Prerank engine is a NestJS-based microservice that processes submitted i
 4. **State Management** - Stores all data in Redis with TTL for crash recovery, there also Postgres for long-term and history cursor store
 5. **Queue Management** - Sends passed solutions to AI ranking service when solution window closes
 
-### What This Does NOT Do
-
-- Final ranking of solutions (handled by separate AI service)
-- Transaction execution (solutions are dry-run only)
-
 ---
 
-## How It Works
+## System Workflow
 
-### Step-by-Step Flow
+### Complete User Journey
 
 **1. User Submits Intent (On-Chain)**
 ```
@@ -96,7 +91,7 @@ AI ranks by quality/efficiency
 Best solution returned to user
 ```
 
-### What Gets Validated (IGS Constraints)
+### Validation Rules
 
 | Constraint | User Benefit | Example |
 |------------|--------------|---------|
@@ -108,7 +103,7 @@ Best solution returned to user
 | **Routing** | Protocol safety | "Don't use risky protocols" |
 | **Limit Price** | Price bounds | "SUI price must be ≥$3.00" |
 
-## Architecture
+## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -153,7 +148,7 @@ Best solution returned to user
                   └──────────────────┘
 ```
 
-### Data Flow
+### Event Processing Flow
 
 1. **Intent Submission**
    ```
@@ -174,9 +169,9 @@ Best solution returned to user
    → Send to AI Ranking API → Cleanup State
    ```
 
-## Integration
+## External Integrations
 
-### System Integration Points
+### Connection Points
 
 **1. Blockchain Integration (Sui Network)**
 - **Connection:** Polls Sui RPC endpoint every 2 seconds for new events
@@ -212,41 +207,6 @@ Best solution returned to user
 - **Data Format:** JSON payload with `{ intentId, solutions[], metadata }`
 - **Trigger:** Automatically pushed when solution window closes
 - **Decoupling:** AI service is separate microservice (not in this repo)
-
-### Module Dependency Map
-
-```
-RedisModule (Base Layer)
-    ↑
-    ├─ SuiModule (blockchain events + dry-run)
-    ├─ WalrusModule (blob fetching)
-    ├─ SourceMapModule (oracle data)
-    │       ↑
-    │       └─ PreRankingModule (constraint validation)
-    │               ↑
-    └───────────────┴─ ProcessingModule (orchestrator)
-```
-
-### Configuration Requirements
-
-**Environment Variables:**
-- `SUI_NETWORK` - Blockchain network (testnet/mainnet)
-- `SUI_RPC_URL` - Sui RPC endpoint
-- `SUI_INTENT_PACKAGE_ID` - Deployed Move contract address
-- `WALRUS_AGGREGATOR_URL` - Walrus storage endpoint
-- `REDIS_URL` - Redis connection string
-- `SUI_EVENT_POLLING_INTERVAL_MS` - Event polling frequency (default: 2000ms)
-
-### External Service Requirements
-
-| Service | Required | Purpose |
-|---------|----------|---------|
-| Sui RPC Node | Yes | Blockchain events + transaction simulation |
-| Walrus Aggregator | Yes | Intent/solution blob storage |
-| Redis Server | Yes | State persistence + caching |
-| AI Ranking Service | No* | Final solution ranking (*optional for prerank-only mode) |
-
----
 
 <div align="center">
 
