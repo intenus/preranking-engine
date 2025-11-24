@@ -1,8 +1,8 @@
-# Intenus Prerank Engine - Intent Processing System
+# Intenus Prerank engine
 
 <div align="center">
 
-**Event-Driven DeFi Intent Processing with Instant Solution Preranking**
+**Event-Driven Intent Processing with Instant Solution Preranking**
 
 [![NestJS](https://img.shields.io/badge/NestJS-10.x-E0234E?logo=nestjs)](https://nestjs.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript)](https://www.typescriptlang.org/)
@@ -16,73 +16,97 @@
 ## Table of Contents
 
 - [Overview](#overview)
-- [Key Features](#key-features)
+- [How it works](#how-it-works)
 - [Architecture](#architecture)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Configuration](#configuration)
+- [Integration](#integration)
 
 ---
 
 ## Overview
 
-Intenus Prerank engine is a NestJS-based microservice that processes DeFi intents using the **Intenus General Standard (IGS)**. It listens to blockchain events, fetches encrypted intent/solution data from Walrus, performs instant preranking validation, and forwards qualified solutions to AI ranking services.
+Intenus Prerank engine is a NestJS-based microservice that processes submitted intents and solutions using the **Intenus General Standard (IGS)**. It listens to blockchain events, fetches encrypted intent/solution data from Walrus, performs instant preranking validation, and forwards qualified solutions to AI ranking services.
 
 ### What This Does
 
 1. **Event Listening** - Monitors Sui blockchain for `IntentSubmitted` and `SolutionSubmitted` events
 2. **Data Retrieval** - Fetches encrypted intents/solutions from Walrus decentralized storage
-3. **Instant Preranking** - Validates solutions immediately upon arrival using constraint-based filtering
-4. **State Management** - Stores all data in Redis with TTL for crash recovery
+3. **Preranking** - Validates solutions immediately upon arrival using constraint-based filtering
+4. **State Management** - Stores all data in Redis with TTL for crash recovery, there also Postgres for long-term and history cursor store
 5. **Queue Management** - Sends passed solutions to AI ranking service when solution window closes
 
 ### What This Does NOT Do
 
--  Final ranking of solutions (handled by separate AI service)
--  Transaction execution (solutions are dry-run only)
--  Batch processing (deprecated - now event-driven)
+- Final ranking of solutions (handled by separate AI service)
+- Transaction execution (solutions are dry-run only)
 
 ---
 
-##  Key Features
+## How It Works
 
-### Instant Preranking
+### Step-by-Step Flow
 
-Solutions are validated **immediately** when `SolutionSubmitted` events arrive, not in batches:
-
-```typescript
-SolutionSubmitted Event → Fetch from Walrus → Validate Constraints → Dry Run → Store Result
+**1. User Submits Intent (On-Chain)**
+```
+User: "Swap 100 SUI for max USDC, <2% slippage, 5min window"
+  ↓
+Sui blockchain emits IntentSubmitted event
+  ↓
+Prerank Engine detects event (2s polling)
+  ↓
+Fetches encrypted intent from Walrus storage
+  ↓
+Stores in Redis + sets 5-minute timeout
+  ↓
+Waits for solver solutions...
 ```
 
-### Comprehensive Constraint Validation
-
-Based on IGS schema, supports:
-
--  **Deadline** - Time-based solution acceptance
--  **Max Slippage** - Percentage-based slippage limits (basis points)
--  **Min Outputs** - Minimum output amounts (slippage protection)
--  **Max Inputs** - Spending ceiling limits
--  **Gas Limits** - Maximum gas cost constraints
--  **Routing** - Max hops, protocol blacklist/whitelist
--  **Limit Price** - Price limits for limit orders (GTE/LTE)
-
-### Redis-Based State Management
-
-All data stored in Redis with 1-hour TTL:
-
+**2. Solvers Submit Solutions (On-Chain)**
 ```
-sui:event:cursor           - Event cursor for crash recovery
-intents:{intentId}         - Full intent data
-solutions:passed:{id}      - Passed solutions
-solutions:failed:{id}      - Failed solutions  
-ranking:queue:{intentId}   - Queue for AI ranking
+Solver: Submits transaction solving the intent
+  ↓
+Sui blockchain emits SolutionSubmitted event
+  ↓
+Prerank Engine detects event immediately
+  ↓
+Fetches solution from Walrus
+  ↓
+INSTANT VALIDATION (500-1000ms total):
+  ├─ ✓ Deadline: Submitted before window closed?
+  ├─ ✓ Routing: Uses allowed protocols?
+  ├─ ✓ Dry-run: Simulate transaction on Sui network
+  │   └─ Extract actual outputs, gas cost
+  ├─ ✓ Slippage: Within user's 2% tolerance?
+  ├─ ✓ Min outputs: Meets minimum amounts?
+  └─ ✓ Gas budget: Within cost limits?
+  ↓
+PASS → Store in Redis: solution:passed:{intentId}
+FAIL → Store in Redis: failed:{intentId} (audit log)
 ```
 
-### Crash Recovery
+**3. Window Closes (Automatic)**
+```
+Timer expires
+  ↓
+Prerank Engine collects all PASSED solutions from Redis
+  ↓
+Sends to AI Ranking service via Redis queue
+  ↓
+AI ranks by quality/efficiency
+  ↓
+Best solution returned to user
+```
 
-Event cursor persisted to Redis - service resumes from last processed event after restart.
+### What Gets Validated (IGS Constraints)
 
----
+| Constraint | User Benefit | Example |
+|------------|--------------|---------|
+| **Deadline** | Solution arrives on time | "Execute within 5 minutes" |
+| **Max Slippage** | Price protection | "Maximum 2% slippage (200 bps)" |
+| **Min Outputs** | Amount guarantee | "Receive ≥950 USDC" |
+| **Max Inputs** | Spending ceiling | "Spend ≤100 SUI" |
+| **Gas Budget** | Cost control | "Max $2 gas fees" |
+| **Routing** | Protocol safety | "Don't use risky protocols" |
+| **Limit Price** | Price bounds | "SUI price must be ≥$3.00" |
 
 ## Architecture
 
@@ -150,192 +174,82 @@ Event cursor persisted to Redis - service resumes from last processed event afte
    → Send to AI Ranking API → Cleanup State
    ```
 
----
+## Integration
 
-## Project Structure (Not updated)
+### System Integration Points
+
+**1. Blockchain Integration (Sui Network)**
+- **Connection:** Polls Sui RPC endpoint every 2 seconds for new events
+- **Events Monitored:** `IntentSubmitted`, `SolutionSubmitted` from deployed Move contract
+- **State Management:** Event cursor persisted in Redis for crash recovery
+- **Dry-run Capability:** Simulates transactions on Sui network to extract outputs and gas costs
+
+**2. Decentralized Storage (Walrus)**
+- **Protocol:** HTTP GET requests to Walrus aggregator nodes
+- **Data Retrieved:** Encrypted intent/solution blobs (too large for blockchain events)
+- **Blob Identification:** Uses `blobId` from blockchain events
+
+**3. State & Cache Layer (Redis)**
+- **Purpose:** Fast in-memory storage for active intents and validated solutions
+- **Key Patterns:**
+  - `sui:event:cursor` - Last processed blockchain event (persistent)
+  - `intent:{intentId}` - Full intent data with 1-hour TTL
+  - `solution:passed:{intentId}:{solutionId}` - Valid solutions (1-hour TTL)
+  - `failed:{intentId}:{solutionId}` - Failed solutions for audit (1-hour TTL)
+  - `ranking:queue:{intentId}` - Queue for AI service consumption
+  - `cache:source:{sourceId}` - Oracle price data (5-30s TTL) (Future works)
+
+**4. Market Data (Oracle Integration)**
+- **SourceMap System:** Flexible multi-provider architecture for price feeds
+- **Providers:**
+  - **DefiLlama** - Off-chain aggregated prices via HTTP API (30s cache)
+  - **Cetus DEX** - On-chain pool reads via Sui RPC (5s cache)
+  - **Aggregators** - Median/average combinations for manipulation resistance
+- **Usage:** Validates slippage constraints and limit prices
+
+**5. AI Ranking Service (Downstream)**
+- **Protocol:** Redis queue-based async communication
+- **Data Format:** JSON payload with `{ intentId, solutions[], metadata }`
+- **Trigger:** Automatically pushed when solution window closes
+- **Decoupling:** AI service is separate microservice (not in this repo)
+
+### Module Dependency Map
 
 ```
-backend/
-├── src/
-│   ├── common/
-│   │   └── types/              # Type definitions from schemas
-│   │       ├── igs-intent.types.ts
-│   │       ├── igs-solution.types.ts
-│   │       ├── core.types.ts
-│   │       └── sui-events.types.ts
-│   ├── config/                 # Configuration
-│   │   ├── database.config.ts
-│   │   ├── redis.config.ts
-│   │   ├── sui.config.ts
-│   │   └── walrus.config.ts
-│   ├── modules/
-│   │   ├── sui/                # Blockchain event listener
-│   │   │   ├── sui.service.ts
-│   │   │   ├── sui.module.ts
-│   │   │   └── sui.service.spec.ts
-│   │   ├── walrus/             # Decentralized storage
-│   │   │   ├── walrus.service.ts
-│   │   │   ├── walrus.module.ts
-│   │   │   └── walrus.service.spec.ts
-│   │   ├── redis/              # State management
-│   │   │   ├── redis.service.ts
-│   │   │   ├── redis.module.ts
-│   │   │   └── redis.service.spec.ts
-│   │   ├── preranking/         # Instant validation
-│   │   │   ├── preranking.service.ts
-│   │   │   ├── preranking.module.ts
-│   │   │   ├── validators/
-│   │   │   │   ├── constraint.validator.ts
-│   │   │   │   └── constraint.validator.spec.ts
-│   │   │   └── preranking.service.spec.ts
-│   │   └── dataset/            # Dataset management
-│   │       ├── dataset.controller.ts
-│   │       └── dataset.service.ts
-│   ├── app.module.ts
-│   └── main.ts
-├── test/
-│   ├── mocks/                  # Test fixtures
-│   │   ├── intent.mock.ts
-│   │   ├── solution.mock.ts
-│   │   └── events.mock.ts
-│   └── app.e2e-spec.ts
-├── schemas/                    # JSON schemas
-│   ├── igs-intent-schema.json
-│   ├── igs-solution-schema.json
-│   └── core-schema.json
-├── .env.example
-├── package.json
-├── tsconfig.json
-└── README.md                   # This file
+RedisModule (Base Layer)
+    ↑
+    ├─ SuiModule (blockchain events + dry-run)
+    ├─ WalrusModule (blob fetching)
+    ├─ SourceMapModule (oracle data)
+    │       ↑
+    │       └─ PreRankingModule (constraint validation)
+    │               ↑
+    └───────────────┴─ ProcessingModule (orchestrator)
 ```
 
----
+### Configuration Requirements
 
-## Getting Started
+**Environment Variables:**
+- `SUI_NETWORK` - Blockchain network (testnet/mainnet)
+- `SUI_RPC_URL` - Sui RPC endpoint
+- `SUI_INTENT_PACKAGE_ID` - Deployed Move contract address
+- `WALRUS_AGGREGATOR_URL` - Walrus storage endpoint
+- `REDIS_URL` - Redis connection string
+- `SUI_EVENT_POLLING_INTERVAL_MS` - Event polling frequency (default: 2000ms)
 
-### Prerequisites
+### External Service Requirements
 
-- **Node.js** >= 18.x
-- **pnpm** >= 8.x (or npm/yarn)
-- **Redis** >= 7.x
-- **PostgreSQL** >= 14.x (optional, for metadata)
-- **Sui CLI** (optional, for local testing)
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/intenus/backend.git
-cd backend
-
-# Install dependencies
-pnpm install
-
-# Copy environment variables
-cp .env.example .env
-
-# Edit .env with your configuration
-nano .env
-```
-
-### Quick Start
-
-```bash
-# Development mode (auto-reload)
-pnpm start:dev
-
-# Production mode
-pnpm build
-pnpm start:prod
-
-# Run tests
-pnpm test
-
-# Run tests with coverage
-pnpm test:cov
-```
-
----
-
-## Configuration
-
-### Environment Variables
-
-Create a `.env` file based on `.env.example`:
-
-#### Sui Blockchain
-
-```env
-SUI_NETWORK=testnet
-SUI_RPC_URL=https://fullnode.testnet.sui.io
-SUI_INTENT_PACKAGE_ID=0x...    # Your deployed package ID
-SUI_EVENT_POLLING_INTERVAL_MS=2000
-SUI_AUTO_START_EVENT_LISTENER=true
-```
-
-#### Walrus Storage
-
-```env
-WALRUS_NETWORK=testnet
-WALRUS_PUBLISHER_URL=https://publisher.walrus-testnet.walrus.space
-WALRUS_AGGREGATOR_URL=https://aggregator.walrus-testnet.walrus.space
-WALRUS_DEFAULT_EPOCHS=5
-```
-
-#### Redis
-
-```env
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_URL=redis://localhost:6379  # Alternative to host/port
-```
-
-#### Application
-
-```env
-PORT=3000
-NODE_ENV=development
-LOG_LEVEL=debug
-CORS_ORIGIN=http://localhost:3001
-```
-
-### Configuration Files
-
-All configs in `src/config/`:
-
-- `sui.config.ts` - Blockchain connection
-- `walrus.config.ts` - Storage settings
-- `redis.config.ts` - Cache & queue
-- `database.config.ts` - PostgreSQL (optional)
-
----
-
-### Internal Events (NestJS Event Emitter)
-
-```typescript
-// Intent submitted
-@OnEvent('intent.submitted')
-handleIntentSubmitted(event: IntentSubmittedEvent) { }
-
-// Solution submitted
-@OnEvent('solution.submitted')
-handleSolutionSubmitted(event: SolutionSubmittedEvent) { }
-```
-
----
-
-##  Acknowledgments
-
-- [NestJS](https://nestjs.com/) - Progressive Node.js framework
-- [Sui](https://sui.io/) - High-performance blockchain
-- [Walrus](https://walrus.site/) - Decentralized storage
-- [Redis](https://redis.io/) - In-memory data store
+| Service | Required | Purpose |
+|---------|----------|---------|
+| Sui RPC Node | Yes | Blockchain events + transaction simulation |
+| Walrus Aggregator | Yes | Intent/solution blob storage |
+| Redis Server | Yes | State persistence + caching |
+| AI Ranking Service | No* | Final solution ranking (*optional for prerank-only mode) |
 
 ---
 
 <div align="center">
 
-**Built with by the Intenus Team**
+**Built by the Intenus Team**
 
 </div>
